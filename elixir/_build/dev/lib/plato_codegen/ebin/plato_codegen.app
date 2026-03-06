@@ -1,0 +1,1 @@
+{application,plato_codegen,[{modules,['Elixir.PlatoCodegen','Elixir.PlatoCodegen.CLI']},{optional_applications,[]},{applications,[kernel,stdlib,elixir]},{description,"plato_codegen"},{registered,[]},{vsn,"0.1.0"}]}.
