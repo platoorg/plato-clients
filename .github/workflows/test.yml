@@ -1,0 +1,113 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      typescript: ${{ steps.filter.outputs.typescript }}
+      zod: ${{ steps.filter.outputs.zod }}
+      go: ${{ steps.filter.outputs.go }}
+      ruby: ${{ steps.filter.outputs.ruby }}
+      elixir: ${{ steps.filter.outputs.elixir }}
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            typescript:
+              - 'typescript/**'
+            zod:
+              - 'zod/**'
+            go:
+              - 'go/**'
+            ruby:
+              - 'ruby/**'
+            elixir:
+              - 'elixir/**'
+            rust:
+              - 'rust/**'
+
+  typescript:
+    needs: changes
+    if: needs.changes.outputs.typescript == 'true'
+    runs-on: ubuntu-latest
+    container: node:20-slim
+    steps:
+      - name: Install git
+        run: apt-get update -qq && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v4
+      - name: Build
+        run: cd typescript && npm install && npm run build
+      - name: Unit tests
+        run: cd typescript && npm test
+      - name: Snapshot test
+        run: bash typescript/tests/run.sh
+
+  zod:
+    needs: changes
+    if: needs.changes.outputs.zod == 'true'
+    runs-on: ubuntu-latest
+    container: node:20-slim
+    steps:
+      - name: Install git
+        run: apt-get update -qq && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v4
+      - name: Build
+        run: cd zod && npm install && npm run build
+      - name: Snapshot test
+        run: bash zod/tests/run.sh
+
+  go:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    container: golang:1.26-bookworm
+    steps:
+      - name: Install git
+        run: apt-get update -qq && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v4
+      - name: Snapshot test
+        run: bash go/tests/run.sh
+
+  ruby:
+    needs: changes
+    if: needs.changes.outputs.ruby == 'true'
+    runs-on: ubuntu-latest
+    container: ruby:3.3-slim
+    steps:
+      - name: Install git
+        run: apt-get update -qq && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v4
+      - name: Snapshot test
+        run: bash ruby/tests/run.sh
+
+  elixir:
+    needs: changes
+    if: needs.changes.outputs.elixir == 'true'
+    runs-on: ubuntu-latest
+    container: hexpm/elixir:1.19.3-erlang-27.3.4.4-debian-bookworm-20260223-slim
+    steps:
+      - name: Install git
+        run: apt-get update -qq && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v4
+      - name: Snapshot test
+        run: bash elixir/tests/run.sh
+
+  rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    container: rust:1-slim-bookworm
+    steps:
+      - name: Install git
+        run: apt-get update -qq && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v4
+      - name: Snapshot test
+        run: bash rust/tests/run.sh
