@@ -1,0 +1,87 @@
+name: release-please
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      typescript--release_created: ${{ steps.release.outputs['typescript--release_created'] }}
+      typescript--tag_name: ${{ steps.release.outputs['typescript--tag_name'] }}
+      zod--release_created: ${{ steps.release.outputs['zod--release_created'] }}
+      zod--tag_name: ${{ steps.release.outputs['zod--tag_name'] }}
+      ruby--release_created: ${{ steps.release.outputs['ruby--release_created'] }}
+      ruby--tag_name: ${{ steps.release.outputs['ruby--tag_name'] }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish-ts-client:
+    needs: release-please
+    if: needs.release-please.outputs['typescript--release_created']
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs['typescript--tag_name'] }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+      - run: cd typescript && npm ci && npm run build && npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-zod-client:
+    needs: release-please
+    if: needs.release-please.outputs['zod--release_created']
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs['zod--tag_name'] }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+      - run: cd zod && npm ci && npm run build && npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-ruby-client:
+    needs: release-please
+    if: needs.release-please.outputs['ruby--release_created']
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs['ruby--tag_name'] }}
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - name: Publish to GitHub Packages
+        run: |
+          mkdir -p ~/.gem
+          echo ':github: Bearer ${{ secrets.GITHUB_TOKEN }}' > ~/.gem/credentials
+          chmod 600 ~/.gem/credentials
+          cd ruby && gem build plato_client.gemspec
+          gem push --key github --host https://rubygems.pkg.github.com/platoorg plato_client-*.gem
+
+  # Go: no publish step needed — consumers reference github.com/platoorg/plato-clients/go
+  # directly; the git tag created by release-please is sufficient.
+
+  # Rust: GitHub Packages does not support Cargo — publish to crates.io when ready.
+  # Elixir: GitHub Packages does not support Hex — publish to hex.pm when ready.
