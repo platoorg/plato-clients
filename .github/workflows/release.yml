@@ -1,0 +1,21 @@
+name: release-please
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE }}
+
+      # Publish steps (add when ready, gate on package-specific output):
+      # ${{ steps.release.outputs['typescript--release_created'] }} → npm publish
+      # ${{ steps.release.outputs['ruby--release_created'] }}       → gem push
+      # ${{ steps.release.outputs['rust--release_created'] }}       → cargo publish
+      # ${{ steps.release.outputs['elixir--release_created'] }}     → mix hex.publish
