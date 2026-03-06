@@ -1,0 +1,36 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "separate-pull-requests": true,
+  "pull-request-title-pattern": "📜 release${scope}: release ${version}",
+  "packages": {
+    "typescript": {
+      "release-type": "node",
+      "package-name": "@platoorg/ts-client",
+      "component": "ts-client"
+    },
+    "zod": {
+      "release-type": "node",
+      "package-name": "@platoorg/zod-client",
+      "component": "zod-client"
+    },
+    "go": {
+      "release-type": "go",
+      "package-name": "github.com/platoorg/plato-clients/go"
+    },
+    "ruby": {
+      "release-type": "ruby",
+      "package-name": "plato_client",
+      "component": "plato_client_ruby"
+    },
+    "elixir": {
+      "release-type": "simple",
+      "package-name": "plato_client",
+      "component": "plato_client_elixir",
+      "extra-files": ["mix.exs"]
+    },
+    "rust": {
+      "release-type": "rust",
+      "package-name": "plato-client"
+    }
+  }
+}
