@@ -1,0 +1,25 @@
+{
+  "namespace": "website",
+  "public": true,
+  "schemas": [
+    {
+      "name": "homepage",
+      "type": "singleton",
+      "fields": [
+        { "name": "hero_title", "type": "string", "required": true },
+        { "name": "hero_subtitle", "type": "string" },
+        { "name": "hero_image", "type": "media" }
+      ]
+    },
+    {
+      "name": "post",
+      "type": "collection",
+      "fields": [
+        { "name": "title", "type": "string", "required": true },
+        { "name": "body", "type": "string" },
+        { "name": "published_at", "type": "date" },
+        { "name": "tags", "type": "relation_many" }
+      ]
+    }
+  ]
+}

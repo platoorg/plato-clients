@@ -1,0 +1,34 @@
+# Dockerfile.test — multi-runtime image for running plato-clients tests.
+#
+# Contains: Node.js 20, Go, Ruby, Elixir (OTP 27), Rust
+# Build:  docker build -f Dockerfile.test -t plato-clients-test .
+# Run:    docker run --rm plato-clients-test
+
+FROM hexpm/elixir:1.19.3-erlang-27.3.4.4-debian-bookworm-20260223-slim
+
+# ── System deps ────────────────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential curl ca-certificates ruby \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Node.js 20 ─────────────────────────────────────────────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Go (architecture-aware) ────────────────────────────────────────────────────
+RUN ARCH=$(dpkg --print-architecture) \
+    && curl -fsSL "https://go.dev/dl/go1.26.1.linux-${ARCH}.tar.gz" \
+       | tar -C /usr/local -xz
+ENV PATH=/usr/local/go/bin:$PATH
+
+# ── Rust ───────────────────────────────────────────────────────────────────────
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --no-modify-path
+ENV PATH=/root/.cargo/bin:$PATH
+
+# ── App ────────────────────────────────────────────────────────────────────────
+WORKDIR /app
+COPY . .
+
+CMD ["bash", "tests/run.sh"]

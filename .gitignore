@@ -1,0 +1,21 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# Go binaries
+go/go
+go/plato-codegen
+
+# Rust build output
+rust/target/
+
+# Generated client files (created by running the generators)
+plato-client.ts
+plato-client.go
+plato_client.rb
+plato_client.ex
+plato_client.rs
+
+# Stray manifest copies
+zod/plato-manifest.json

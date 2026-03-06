@@ -1,0 +1,20 @@
+{
+  "name": "@plato/client",
+  "version": "0.1.0",
+  "description": "Code generator that turns a Plato plato-manifest.json into a typed, framework-agnostic client",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "plato-codegen": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev":   "tsc --watch",
+    "test":  "node --experimental-vm-modules node_modules/.bin/jest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

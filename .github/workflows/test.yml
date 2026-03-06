@@ -1,0 +1,38 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lang: typescript
+            image: node:20-slim
+          - lang: zod
+            image: node:20-slim
+          - lang: go
+            image: golang:1.26-bookworm
+          - lang: ruby
+            image: ruby:3.3-slim
+          - lang: elixir
+            image: hexpm/elixir:1.19.3-erlang-27.3.4.4-debian-bookworm-20260223-slim
+          - lang: rust
+            image: rust:1-slim-bookworm
+
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      - name: Install git
+        run: apt-get update -qq && apt-get install -y --no-install-recommends git
+
+      - uses: actions/checkout@v4
+
+      - name: Run ${{ matrix.lang }} test
+        run: bash tests/run.sh --only=${{ matrix.lang }}
