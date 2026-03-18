@@ -1,0 +1,77 @@
+name: publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to publish
+        required: true
+        type: choice
+        options:
+          - ts-client
+          - zod-client
+          - ruby
+      ref:
+        description: Git ref to publish (tag, branch, or SHA)
+        required: false
+
+jobs:
+  publish-ts-client:
+    if: startsWith(github.ref_name, 'ts-client-') || (github.event_name == 'workflow_dispatch' && inputs.package == 'ts-client')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - run: cd typescript && npm ci && npm run build && npm publish
+
+  publish-zod-client:
+    if: startsWith(github.ref_name, 'zod-client-') || (github.event_name == 'workflow_dispatch' && inputs.package == 'zod-client')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - run: cd zod && npm ci && npm run build && npm publish
+
+  publish-ruby-client:
+    if: startsWith(github.ref_name, 'plato_client_ruby-') || (github.event_name == 'workflow_dispatch' && inputs.package == 'ruby')
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - name: Publish to GitHub Packages
+        run: |
+          mkdir -p ~/.gem
+          echo ':github: Bearer ${{ secrets.GITHUB_TOKEN }}' > ~/.gem/credentials
+          chmod 600 ~/.gem/credentials
+          cd ruby && gem build plato_client.gemspec
+          gem push --key github --host https://rubygems.pkg.github.com/platoorg plato_client-*.gem
+
+  # Go: no publish step needed — consumers reference github.com/platoorg/plato-clients/go
+  # directly; the git tag created by release-please is sufficient.
+
+  # Rust: GitHub Packages does not support Cargo — publish to crates.io when ready.
+  # Elixir: GitHub Packages does not support Hex — publish to hex.pm when ready.
