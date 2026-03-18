@@ -36,7 +36,7 @@ jobs:
           ref: ${{ needs.release-please.outputs['typescript--tag_name'] }}
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
       - run: cd typescript && npm ci && npm run build && npm publish
 
@@ -53,7 +53,7 @@ jobs:
           ref: ${{ needs.release-please.outputs['zod--tag_name'] }}
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
       - run: cd zod && npm ci && npm run build && npm publish
 
