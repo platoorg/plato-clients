@@ -44,11 +44,11 @@ afterEach(() => {
 // ── Key resolution ────────────────────────────────────────────────────────────
 
 describe('key resolution', () => {
-  test('throws when neither apiKey nor secret is provided', async () => {
-    mockFetch(OK_RESULT);
-    await expect(
-      syncManifest({ url: 'http://plato.test', namespace: 'ns', manifest: MANIFEST })
-    ).rejects.toThrow('PLATO_API_KEY or PLATO_SECRET');
+  test('sends no Authorization header when neither apiKey nor secret is provided', async () => {
+    const fetch = mockFetch(OK_RESULT);
+    await syncManifest({ url: 'http://plato.test', namespace: 'ns', manifest: MANIFEST });
+    const [, init] = fetch.mock.calls[0] as [string, RequestInit & { headers: Record<string, string> }];
+    expect(init.headers).not.toHaveProperty('Authorization');
   });
 
   test('uses apiKey directly in Authorization header', async () => {
