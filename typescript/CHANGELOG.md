@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.3](https://github.com/platoorg/plato-clients/compare/ts-client-v0.1.2...ts-client-v0.1.3) (2026-03-18)
+
+
+### Bug Fixes
+
+* **ts-client:** cover singleton shape and optional header fields ([7b650cc](https://github.com/platoorg/plato-clients/commit/7b650cc2c4159c40b24eead034d16bfde0e98dd9))
+* **ts-client:** fetch singleton as object, not array ([96634e5](https://github.com/platoorg/plato-clients/commit/96634e50e746fd8cbf5f95b9b064607e8f790daa))
+* **ts-client:** omit namespace/public header fields when not present ([6211644](https://github.com/platoorg/plato-clients/commit/621164476870b01236f21f835e7760842a29232c))
+
 ## [0.1.2](https://github.com/platoorg/plato-clients/compare/ts-client-v0.1.1...ts-client-v0.1.2) (2026-03-18)
 
 
