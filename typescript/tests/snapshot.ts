@@ -60,9 +60,8 @@ export class PlatoClient {
 
   // ── homepage (singleton) ────────────────────────────────────
   /** Fetch the homepage singleton. */
-  async getHomepage(): Promise<Homepage | null> {
-    const data = await this.get<Homepage[]>('homepage');
-    return data[0] ?? null;
+  async getHomepage(): Promise<Homepage> {
+    return this.get<Homepage>('homepage');
   }
 
   /** Update the homepage singleton. */

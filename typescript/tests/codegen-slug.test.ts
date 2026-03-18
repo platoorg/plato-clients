@@ -17,6 +17,60 @@ function makeManifest(overrides: Partial<Parameters<typeof generateTypeScript>[0
   };
 }
 
+function makeSingletonManifest(): Manifest {
+  return {
+    namespace: 'test',
+    public: false,
+    schemas: [
+      {
+        name: 'Homepage',
+        type: 'singleton',
+        fields: [{ name: 'title', type: 'string', required: true }],
+      },
+    ],
+  };
+}
+
+describe('singleton codegen', () => {
+  test('getter returns Promise<T>, not Promise<T | null>', () => {
+    const out = generateTypeScript(makeSingletonManifest());
+    expect(out).toContain('Promise<Homepage>');
+    expect(out).not.toContain('Promise<Homepage | null>');
+  });
+
+  test('getter calls get<T> directly, not get<T[]>', () => {
+    const out = generateTypeScript(makeSingletonManifest());
+    expect(out).toContain("return this.get<Homepage>('homepage');");
+    expect(out).not.toContain('get<Homepage[]>');
+  });
+
+  test('no array index fallback in getter', () => {
+    const out = generateTypeScript(makeSingletonManifest());
+    expect(out).not.toContain('data[0]');
+  });
+});
+
+describe('generated file header', () => {
+  test('includes namespace and public when both are present', () => {
+    const out = generateTypeScript({ namespace: 'my-ns', public: true, schemas: [] });
+    expect(out).toContain('// Namespace: my-ns · public: true');
+  });
+
+  test('omits namespace/public line entirely when both are absent', () => {
+    const out = generateTypeScript({ schemas: [] });
+    expect(out).not.toContain('undefined');
+    expect(out).not.toContain('Namespace:');
+    expect(out).not.toContain('public:');
+  });
+
+  test('omits only the missing field when just one is absent', () => {
+    const out = generateTypeScript({ namespace: 'my-ns', schemas: [] });
+    expect(out).toContain('Namespace: my-ns');
+    expect(out).not.toContain('public:');
+    expect(out).not.toContain('undefined');
+  });
+});
+
 describe('slug handling in codegen', () => {
   test('explicit slug with hyphen is used verbatim in API paths', () => {
     const out = generateTypeScript(makeManifest({ name: 'Website Headline', slug: 'website-headline' }));
