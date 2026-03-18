@@ -29,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,7 +38,7 @@ jobs:
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
-      - run: cd typescript && npm ci && npm run build && npm publish --provenance
+      - run: cd typescript && npm ci && npm run build && npm publish
 
   publish-zod-client:
     needs: release-please
@@ -45,6 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,7 +55,7 @@ jobs:
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
-      - run: cd zod && npm ci && npm run build && npm publish --provenance
+      - run: cd zod && npm ci && npm run build && npm publish
 
   publish-ruby-client:
     needs: release-please
