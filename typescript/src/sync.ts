@@ -69,6 +69,16 @@ export type ExportOptions = Omit<SyncOptions, 'manifest' | 'preview'>;
 
 // ── Key derivation ────────────────────────────────────────────────────────────
 
+/**
+ * Derive an API key from a shared secret and namespace slug.
+ * Algorithm: HMAC-SHA256(key=secret, data=namespace), encoded as lowercase hex.
+ *
+ * The server validates keys in this exact hex form, so any runtime client
+ * that derives its own key must also use hex encoding — not base64 or binary.
+ *
+ * @example
+ *   const apiKey = createHmac('sha256', PLATO_SECRET).update(namespace).digest('hex');
+ */
 function deriveKey(secret: string, namespace: string): string {
   return crypto.createHmac('sha256', secret).update(namespace).digest('hex');
 }
