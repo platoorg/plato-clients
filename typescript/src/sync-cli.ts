@@ -53,11 +53,6 @@ if (!namespace) {
   console.error('✗  PLATO_NAMESPACE is not set (or --namespace=<ns> not provided)');
   process.exit(1);
 }
-if (!apiKey && !secret) {
-  console.error('✗  Set PLATO_API_KEY or PLATO_SECRET');
-  process.exit(1);
-}
-
 const baseOpts = { url, namespace, apiKey, secret };
 
 // ── Export mode ───────────────────────────────────────────────────────────────

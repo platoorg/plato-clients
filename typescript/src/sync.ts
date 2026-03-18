@@ -73,12 +73,10 @@ function deriveKey(secret: string, namespace: string): string {
   return crypto.createHmac('sha256', secret).update(namespace).digest('hex');
 }
 
-function resolveKey(opts: Pick<SyncOptions, 'apiKey' | 'secret' | 'namespace'>): string {
+function resolveKey(opts: Pick<SyncOptions, 'apiKey' | 'secret' | 'namespace'>): string | undefined {
   if (opts.apiKey) return opts.apiKey;
   if (opts.secret) return deriveKey(opts.secret, opts.namespace);
-  throw new Error(
-    'No API key available. Set PLATO_API_KEY or PLATO_SECRET in the environment.'
-  );
+  return undefined;
 }
 
 // ── Core functions ────────────────────────────────────────────────────────────
@@ -92,12 +90,12 @@ export async function syncManifest(opts: SyncOptions): Promise<SyncResult> {
   const base = opts.url.replace(/\/$/, '');
   const url = `${base}/api/namespaces/${opts.namespace}/sync${opts.preview ? '?preview=true' : ''}`;
 
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (key) headers['Authorization'] = `Bearer ${key}`;
+
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(opts.manifest),
   });
 
@@ -118,9 +116,10 @@ export async function exportManifest(opts: ExportOptions): Promise<SyncManifest>
   const base = opts.url.replace(/\/$/, '');
   const url = `${base}/api/namespaces/${opts.namespace}/sync`;
 
-  const res = await fetch(url, {
-    headers: { 'Authorization': `Bearer ${key}` },
-  });
+  const headers: Record<string, string> = {};
+  if (key) headers['Authorization'] = `Bearer ${key}`;
+
+  const res = await fetch(url, { headers });
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
