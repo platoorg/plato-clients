@@ -24,7 +24,7 @@ export interface ManifestSchema {
 }
 
 export interface Manifest {
-  namespace: string;
-  public: boolean;
+  namespace?: string;
+  public?: boolean;
   schemas: ManifestSchema[];
 }
