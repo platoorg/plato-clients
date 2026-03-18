@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/platoorg/plato-clients/compare/ts-client-v0.1.1...ts-client-v0.1.2) (2026-03-18)
+
+
+### Bug Fixes
+
+* provenance ([26e53cd](https://github.com/platoorg/plato-clients/commit/26e53cd98960e969d3f06ef82d3832795bd736fa))
+
 ## [0.1.1](https://github.com/platoorg/plato-clients/compare/ts-client-v0.1.0...ts-client-v0.1.1) (2026-03-18)
 
 
