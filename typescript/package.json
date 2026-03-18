@@ -1,6 +1,6 @@
 {
   "name": "@platoorg/ts-client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Code generator that turns a Plato plato-manifest.json into a typed, framework-agnostic client",
   "type": "module",
   "main": "dist/index.js",
