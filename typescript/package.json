@@ -1,10 +1,20 @@
 {
   "name": "@platoorg/ts-client",
   "version": "0.1.3",
-  "description": "Code generator that turns a Plato plato-manifest.json into a typed, framework-agnostic client",
+  "description": "Code generator that turns a plato-manifest.json into a typed, framework-agnostic client",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./generated": {
+      "import": "./generated/index.js",
+      "types": "./generated/index.d.ts"
+    }
+  },
   "bin": {
     "plato-ts": "dist/cli.js",
     "plato-sync": "dist/sync-cli.js"
