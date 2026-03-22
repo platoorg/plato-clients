@@ -4,6 +4,7 @@ export type FieldType =
   | 'boolean'
   | 'date'
   | 'media'
+  | 'richtext'
   | 'relation_one'
   | 'relation_many';
 
@@ -20,6 +21,7 @@ export interface ManifestSchema {
   slug?: string;
   type?: SchemaType;
   singleton?: boolean;  // alternative to type: 'singleton'
+  managed?: boolean;    // organisational-only; excluded from codegen
   fields: ManifestField[];
 }
 
