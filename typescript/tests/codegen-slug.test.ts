@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { generateTypeScript } from '../src/generators/typescript.js';
+import { generateTypeScript, generateDeclarations, generateRuntime } from '../src/generators/typescript.js';
 import type { Manifest } from '../src/manifest.js';
 
 function makeManifest(overrides: Partial<Parameters<typeof generateTypeScript>[0]['schemas'][number]>): Manifest {
@@ -109,5 +109,62 @@ describe('slug handling in codegen', () => {
   test('spaced name with explicit slug produces correct PascalCase interface', () => {
     const out = generateTypeScript(makeManifest({ name: 'Website Headline', slug: 'website-headline' }));
     expect(out).toContain('interface WebsiteHeadline');
+  });
+});
+
+describe('generateDeclarations', () => {
+  test('singleton overload returns Promise<T>', () => {
+    const out = generateDeclarations(makeSingletonManifest());
+    expect(out).toContain("fetchSchema(schema: 'homepage'): Promise<Homepage>");
+  });
+
+  test('collection overload returns Promise<T[]>', () => {
+    const out = generateDeclarations(makeManifest({ name: 'post', type: 'collection' }));
+    expect(out).toContain("fetchSchema(schema: 'post'): Promise<Post[]>");
+  });
+
+  test('includes fallback overload and fetchContent', () => {
+    const out = generateDeclarations(makeSingletonManifest());
+    expect(out).toContain('fetchSchema(schema: string): Promise<PlatoItem | PlatoItem[]>');
+    expect(out).toContain('fetchContent(id: string): Promise<PlatoItem>');
+  });
+
+  test('respects explicit slug in overload', () => {
+    const out = generateDeclarations(makeManifest({ name: 'Website Headline', slug: 'website-headline' }));
+    expect(out).toContain("fetchSchema(schema: 'website-headline')");
+  });
+
+  test('includes schema interfaces', () => {
+    const out = generateDeclarations(makeSingletonManifest());
+    expect(out).toContain('interface Homepage extends PlatoItem');
+  });
+});
+
+describe('generateRuntime', () => {
+  test('includes SCHEMA_META with slug and singleton flag', () => {
+    const out = generateRuntime(makeSingletonManifest());
+    expect(out).toContain("'homepage': { slug: 'homepage', singleton: true }");
+  });
+
+  test('collection has singleton: false', () => {
+    const out = generateRuntime(makeManifest({ name: 'post', type: 'collection' }));
+    expect(out).toContain("singleton: false");
+  });
+
+  test('includes fetchSchema and fetchContent methods', () => {
+    const out = generateRuntime(makeSingletonManifest());
+    expect(out).toContain('async fetchSchema(schema)');
+    expect(out).toContain('async fetchContent(id)');
+  });
+
+  test('fetchSchema looks up slug from SCHEMA_META', () => {
+    const out = generateRuntime(makeSingletonManifest());
+    expect(out).toContain('SCHEMA_META[schema]');
+    expect(out).toContain('meta.slug');
+  });
+
+  test('respects explicit slug in SCHEMA_META', () => {
+    const out = generateRuntime(makeManifest({ name: 'Website Headline', slug: 'website-headline' }));
+    expect(out).toContain("'website-headline': { slug: 'website-headline'");
   });
 });
