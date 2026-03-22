@@ -34,8 +34,10 @@ function makeSingletonManifest(): Manifest {
 describe('singleton codegen', () => {
   test('getter returns Promise<T>, not Promise<T | null>', () => {
     const out = generateTypeScript(makeSingletonManifest());
-    expect(out).toContain('Promise<Homepage>');
-    expect(out).not.toContain('Promise<Homepage | null>');
+    // The primary getter must return Promise<Homepage>
+    expect(out).toContain('async getHomepage(): Promise<Homepage>');
+    // The try* variant is allowed to return Promise<Homepage | null>; the getter itself must not
+    expect(out).not.toContain('async getHomepage(): Promise<Homepage | null>');
   });
 
   test('getter calls get<T> directly, not get<T[]>', () => {

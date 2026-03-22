@@ -17,6 +17,14 @@ export class PlatoClient {
     this.#apiKey     = apiKey;
   }
 
+  static fromEnv() {
+    const url = process.env['PLATO_URL'];
+    const ns  = process.env['PLATO_NAMESPACE'];
+    if (!url) throw new Error('[plato] PLATO_URL env var is not set');
+    if (!ns)  throw new Error('[plato] PLATO_NAMESPACE env var is not set');
+    return new PlatoClient(url, ns, process.env['PLATO_API_KEY']);
+  }
+
   #headers() {
     const h = { 'Content-Type': 'application/json' };
     if (this.#apiKey) h['Authorization'] = `Bearer ${this.#apiKey}`;

@@ -24,6 +24,7 @@ export interface Post extends PlatoItem {
 
 export declare class PlatoClient {
   constructor(baseUrl: string, namespace: string, apiKey?: string);
+  static fromEnv(): PlatoClient;
   /** Fetch homepage (singleton) */
   fetchSchema(schema: 'homepage'): Promise<Homepage>;
   /** Fetch post (collection) */
