@@ -23,24 +23,48 @@ function toSlug(schema: { name: string; slug?: string }): string {
     .replace(/[^a-z0-9-]/g, '');
 }
 
-/** Map a Plato field type to its TypeScript counterpart. */
+/** Map a Plato field type to its TypeScript counterpart (interface fields). */
 const TS_TYPE: Record<string, string> = {
-  string:       'string',
-  number:       'number',
-  boolean:      'boolean',
-  date:         'string',       // ISO 8601 date string
-  media:        'string',       // media asset URL
-  relation_one: 'string',       // ID of related item
-  relation_many: 'string[]',    // IDs of related items
+  string:        'string',
+  number:        'number',
+  boolean:       'boolean',
+  date:          'string',           // ISO 8601 date string
+  media:         'string',           // media asset URL
+  richtext:      'RichTextDocument', // structured rich-text document
+  relation_one:  'string',           // ID of related item
+  relation_many: 'string[]',         // IDs of related items
+};
+
+/** Map a Plato field type to its TypeScript counterpart inside *Params interfaces. */
+const PARAMS_TS_TYPE: Record<string, string> = {
+  string:        'string',
+  number:        'number',
+  boolean:       'boolean',
+  date:          'string',
+  media:         'string',
+  richtext:      'string',
+  relation_one:  'string',
+  relation_many: 'string',
 };
 
 /** Inline doc-comment for field types that need clarification. */
 const TS_TYPE_COMMENT: Record<string, string> = {
-  date:         'ISO 8601 date string',
-  media:        'media asset URL',
-  relation_one: 'ID of related item',
+  date:          'ISO 8601 date string',
+  media:         'media asset URL',
+  richtext:      'structured rich-text document',
+  relation_one:  'ID of related item',
   relation_many: 'IDs of related items',
 };
+
+/** Returns true if any schema in the manifest uses the richtext field type. */
+function hasRichTextField(schemas: ManifestSchema[]): boolean {
+  return schemas.some(s => s.fields.some(f => f.type === 'richtext'));
+}
+
+/** Returns true if the schema should be excluded from codegen. */
+function isOrganisational(schema: ManifestSchema): boolean {
+  return schema.managed === true || schema.fields.length === 0;
+}
 
 function fieldLine(field: ManifestField): string {
   const tsType  = TS_TYPE[field.type] ?? 'unknown';
@@ -55,6 +79,19 @@ function fieldLine(field: ManifestField): string {
 
 function generateTypes(schemas: ManifestSchema[]): string {
   const lines: string[] = [];
+
+  if (hasRichTextField(schemas)) {
+    lines.push('// ── Rich text ───────────────────────────────────────────────');
+    lines.push('export interface RichTextNode {');
+    lines.push('  type: string;');
+    lines.push('  [key: string]: unknown;');
+    lines.push('}');
+    lines.push('export interface RichTextDocument {');
+    lines.push("  type: 'doc';");
+    lines.push('  content: RichTextNode[];');
+    lines.push('}');
+    lines.push('');
+  }
 
   lines.push('// ── Base ────────────────────────────────────────────────────');
   lines.push('export interface PlatoItem {');
@@ -80,15 +117,19 @@ function generateTypes(schemas: ManifestSchema[]): string {
 // ── Section: filter params ────────────────────────────────────────────────────
 
 /**
- * Generate a Params interface for list methods.
- * Every field becomes an optional string param (Plato filter query strings).
+ * Generate a Params interface for list / find methods.
+ * Field types are preserved (boolean stays boolean, number stays number).
+ * A `populate` field allows requesting relation resolution server-side.
  */
 function generateParams(schema: ManifestSchema): string {
   const name  = toPascalCase(schema.name);
   const lines = [`export interface ${name}Params {`];
   for (const field of schema.fields) {
-    lines.push(`  ${field.name}?: string;`);
+    const tsType = PARAMS_TS_TYPE[field.type] ?? 'string';
+    lines.push(`  ${field.name}?: ${tsType};`);
   }
+  lines.push('  /** Relation fields to populate server-side (e.g. ["tags", "author"]). */');
+  lines.push('  populate?: string[];');
   lines.push('}');
   return lines.join('\n');
 }
@@ -106,28 +147,34 @@ function generateSingletonMethods(schema: ManifestSchema): string[] {
   lines.push(`    return this.get<${name}>('${slug}');`);
   lines.push(`  }`);
 
-  // update
+  // update — direct PUT to /:schema, no prior GET needed
   lines.push('');
   lines.push(`  /** Update the ${schema.name} singleton. */`);
   lines.push(`  async update${name}(data: Partial<Omit<${name}, keyof PlatoItem>>): Promise<${name}> {`);
-  lines.push(`    const item = await this.get${name}();`);
-  lines.push(`    if (!item) throw new Error('${schema.name} singleton not found');`);
-  lines.push(`    return this.put<${name}>(\`${slug}/\${item.id}\`, data);`);
+  lines.push(`    return this.put<${name}>('${slug}', data);`);
+  lines.push(`  }`);
+
+  // try* — returns null instead of throwing
+  lines.push('');
+  lines.push(`  /** Like get${name}() but returns null instead of throwing on error. */`);
+  lines.push(`  async tryGet${name}(): Promise<${name} | null> {`);
+  lines.push(`    try { return await this.get${name}(); } catch { return null; }`);
   lines.push(`  }`);
 
   return lines;
 }
 
 function generateCollectionMethods(schema: ManifestSchema): string[] {
-  const name  = toPascalCase(schema.name);
-  const slug  = toSlug(schema);
+  const name         = toPascalCase(schema.name);
+  const slug         = toSlug(schema);
+  const hasSlugField = schema.fields.some(f => f.name === 'slug');
   const lines: string[] = [];
 
-  // list
-  lines.push(`  /** List ${schema.name} items. Pass filter params as \`{ field: value }\`. */`);
+  // list (with populate support)
+  lines.push(`  /** List ${schema.name} items. Supports filtering and server-side relation population. */`);
   lines.push(`  async list${name}(params?: ${name}Params): Promise<${name}[]> {`);
-  lines.push(`    const qs = params ? '?' + new URLSearchParams(params as Record<string, string>) : '';`);
-  lines.push(`    return this.get<${name}[]>(\`${slug}\${qs}\`);`);
+  lines.push(`    const { populate, ...filters } = params ?? {};`);
+  lines.push(`    return this.get<${name}[]>(\`${slug}\${this.buildQs(filters, populate)}\`);`);
   lines.push(`  }`);
 
   // get by id
@@ -158,6 +205,36 @@ function generateCollectionMethods(schema: ManifestSchema): string[] {
   lines.push(`    await this.request(\`${slug}/\${id}\`, { method: 'DELETE' });`);
   lines.push(`  }`);
 
+  // find — returns first match (server-filtered)
+  lines.push('');
+  lines.push(`  /** Return the first ${schema.name} matching the given params, or null. */`);
+  lines.push(`  async find${name}(params: ${name}Params): Promise<${name} | null> {`);
+  lines.push(`    const results = await this.list${name}(params);`);
+  lines.push(`    return results[0] ?? null;`);
+  lines.push(`  }`);
+
+  // getBySlug — only when schema has a slug field
+  if (hasSlugField) {
+    lines.push('');
+    lines.push(`  /** Fetch the ${schema.name} with the given slug, or null. */`);
+    lines.push(`  async get${name}BySlug(slug: string): Promise<${name} | null> {`);
+    lines.push(`    return this.find${name}({ slug });`);
+    lines.push(`  }`);
+  }
+
+  // try* — safe variants that return null / [] instead of throwing
+  lines.push('');
+  lines.push(`  /** Like list${name}() but returns [] instead of throwing on error. */`);
+  lines.push(`  async tryList${name}(params?: ${name}Params): Promise<${name}[]> {`);
+  lines.push(`    try { return await this.list${name}(params); } catch { return []; }`);
+  lines.push(`  }`);
+
+  lines.push('');
+  lines.push(`  /** Like get${name}() but returns null instead of throwing on error. */`);
+  lines.push(`  async tryGet${name}(id: string): Promise<${name} | null> {`);
+  lines.push(`    try { return await this.get${name}(id); } catch { return null; }`);
+  lines.push(`  }`);
+
   return lines;
 }
 
@@ -179,6 +256,19 @@ function generateClient(schemas: ManifestSchema[]): string {
   lines.push('    private readonly apiKey?: string,');
   lines.push('  ) {}');
   lines.push('');
+
+  // fromEnv() static factory
+  lines.push('  /** Construct a client from PLATO_URL, PLATO_NAMESPACE, and PLATO_API_KEY env vars. */');
+  lines.push('  static fromEnv(): PlatoClient {');
+  lines.push("    const url = process.env['PLATO_URL'];");
+  lines.push("    const ns  = process.env['PLATO_NAMESPACE'];");
+  lines.push("    if (!url) throw new Error('[plato] PLATO_URL env var is not set');");
+  lines.push("    if (!ns)  throw new Error('[plato] PLATO_NAMESPACE env var is not set');");
+  lines.push("    return new PlatoClient(url, ns, process.env['PLATO_API_KEY']);");
+  lines.push('  }');
+  lines.push('');
+
+  // Private helpers
   lines.push('  private headers(): Record<string, string> {');
   lines.push('    const h: Record<string, string> = { \'Content-Type\': \'application/json\' };');
   lines.push('    if (this.apiKey) h[\'Authorization\'] = `Bearer ${this.apiKey}`;');
@@ -194,9 +284,30 @@ function generateClient(schemas: ManifestSchema[]): string {
   lines.push('    return res.json() as Promise<T>;');
   lines.push('  }');
   lines.push('');
+  lines.push('  private buildQs(filters: Record<string, unknown>, populate?: string[]): string {');
+  lines.push('    const pairs = Object.entries(filters).filter(([, v]) => v != null);');
+  lines.push('    const qs = new URLSearchParams(pairs.map(([k, v]) => [k, String(v)]));');
+  lines.push("    if (populate?.length) qs.set('populate', populate.join(','));");
+  lines.push('    const s = qs.toString();');
+  lines.push("    return s ? '?' + s : '';");
+  lines.push('  }');
+  lines.push('');
   lines.push('  private get<T>(path: string)                         { return this.request<T>(path); }');
   lines.push('  private post<T>(path: string, body: unknown)         { return this.request<T>(path, { method: \'POST\',   body: JSON.stringify(body) }); }');
   lines.push('  private put<T>(path: string, body: unknown)          { return this.request<T>(path, { method: \'PUT\',    body: JSON.stringify(body) }); }');
+  lines.push('');
+
+  // Generic escape hatches
+  lines.push('  // ── Generic ─────────────────────────────────────────────────');
+  lines.push('  /** Fetch a singleton by schema slug — typed escape hatch for unlisted schemas. */');
+  lines.push('  async getSingleton<T extends PlatoItem>(schema: string): Promise<T> {');
+  lines.push('    return this.get<T>(schema);');
+  lines.push('  }');
+  lines.push('');
+  lines.push('  /** Fetch a collection by schema slug — typed escape hatch for unlisted schemas. */');
+  lines.push('  async getCollection<T extends PlatoItem>(schema: string, params?: Record<string, string | number | boolean>): Promise<T[]> {');
+  lines.push('    return this.get<T[]>(`${schema}${this.buildQs(params ?? {})}`);');
+  lines.push('  }');
 
   for (const schema of schemas) {
     lines.push('');
@@ -219,6 +330,8 @@ function generateClient(schemas: ManifestSchema[]): string {
  * This includes typed overloads so `fetchSchema('homepage')` returns `Promise<Homepage>`.
  */
 export function generateDeclarations(manifest: Manifest): string {
+  const schemas = manifest.schemas.filter(s => !isOrganisational(s));
+
   const metaParts: string[] = [];
   if (manifest.namespace !== undefined) metaParts.push(`Namespace: ${manifest.namespace}`);
   if (manifest.public    !== undefined) metaParts.push(`public: ${manifest.public}`);
@@ -227,14 +340,23 @@ export function generateDeclarations(manifest: Manifest): string {
   const lines: string[] = [
     `// Generated by @platoorg/ts-client — run \`npx plato-ts generate\` to regenerate${metaLine}`,
     '',
+  ];
+
+  if (hasRichTextField(schemas)) {
+    lines.push('export interface RichTextNode { type: string; [key: string]: unknown; }');
+    lines.push("export interface RichTextDocument { type: 'doc'; content: RichTextNode[]; }");
+    lines.push('');
+  }
+
+  lines.push(
     'export interface PlatoItem {',
     '  id: string;',
     '  created_at: string;',
     '  updated_at: string;',
     '}',
-  ];
+  );
 
-  for (const schema of manifest.schemas) {
+  for (const schema of schemas) {
     const name = toPascalCase(schema.name);
     lines.push('');
     lines.push(`/** ${isSingleton(schema) ? 'singleton' : 'collection'} */`);
@@ -248,12 +370,13 @@ export function generateDeclarations(manifest: Manifest): string {
   lines.push('');
   lines.push('export declare class PlatoClient {');
   lines.push('  constructor(baseUrl: string, namespace: string, apiKey?: string);');
+  lines.push('  static fromEnv(): PlatoClient;');
 
-  for (const schema of manifest.schemas) {
-    const name     = toPascalCase(schema.name);
-    const slug     = toSlug(schema);
-    const retType  = isSingleton(schema) ? `Promise<${name}>` : `Promise<${name}[]>`;
-    const kind     = isSingleton(schema) ? 'singleton' : 'collection';
+  for (const schema of schemas) {
+    const name    = toPascalCase(schema.name);
+    const slug    = toSlug(schema);
+    const retType = isSingleton(schema) ? `Promise<${name}>` : `Promise<${name}[]>`;
+    const kind    = isSingleton(schema) ? 'singleton' : 'collection';
     lines.push(`  /** Fetch ${schema.name} (${kind}) */`);
     lines.push(`  fetchSchema(schema: '${slug}'): ${retType};`);
   }
@@ -274,6 +397,8 @@ export function generateDeclarations(manifest: Manifest): string {
  * Schema metadata is baked in so `fetchSchema` can resolve slugs at runtime.
  */
 export function generateRuntime(manifest: Manifest): string {
+  const schemas = manifest.schemas.filter(s => !isOrganisational(s));
+
   const metaParts: string[] = [];
   if (manifest.namespace !== undefined) metaParts.push(`Namespace: ${manifest.namespace}`);
   if (manifest.public    !== undefined) metaParts.push(`public: ${manifest.public}`);
@@ -285,7 +410,7 @@ export function generateRuntime(manifest: Manifest): string {
     'const SCHEMA_META = {',
   ];
 
-  for (const schema of manifest.schemas) {
+  for (const schema of schemas) {
     const slug = toSlug(schema);
     lines.push(`  '${slug}': { slug: '${slug}', singleton: ${isSingleton(schema)} },`);
   }
@@ -301,6 +426,14 @@ export function generateRuntime(manifest: Manifest): string {
   lines.push('    this.#baseUrl    = baseUrl;');
   lines.push('    this.#namespace  = namespace;');
   lines.push('    this.#apiKey     = apiKey;');
+  lines.push('  }');
+  lines.push('');
+  lines.push('  static fromEnv() {');
+  lines.push("    const url = process.env['PLATO_URL'];");
+  lines.push("    const ns  = process.env['PLATO_NAMESPACE'];");
+  lines.push("    if (!url) throw new Error('[plato] PLATO_URL env var is not set');");
+  lines.push("    if (!ns)  throw new Error('[plato] PLATO_NAMESPACE env var is not set');");
+  lines.push("    return new PlatoClient(url, ns, process.env['PLATO_API_KEY']);");
   lines.push('  }');
   lines.push('');
   lines.push("  #headers() {");
@@ -343,6 +476,8 @@ export function generateRuntime(manifest: Manifest): string {
  *   - A `PlatoClient` class with fully-typed CRUD methods
  */
 export function generateTypeScript(manifest: Manifest): string {
+  const schemas = manifest.schemas.filter(s => !isOrganisational(s));
+
   const metaParts: string[] = [];
   if (manifest.namespace !== undefined) metaParts.push(`Namespace: ${manifest.namespace}`);
   if (manifest.public    !== undefined) metaParts.push(`public: ${manifest.public}`);
@@ -350,12 +485,12 @@ export function generateTypeScript(manifest: Manifest): string {
 
   const header = [
     `// Generated by @platoorg/ts-client — do not edit manually${metaLine}`,
-    `// Schema count: ${manifest.schemas.length}`,
+    `// Schema count: ${schemas.length}`,
     '',
   ].join('\n');
 
-  const types  = generateTypes(manifest.schemas);
-  const client = generateClient(manifest.schemas);
+  const types  = generateTypes(schemas);
+  const client = generateClient(schemas);
 
   return [header, types, '', client, ''].join('\n');
 }
