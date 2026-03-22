@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/platoorg/plato-clients/compare/ts-client-v0.2.0...ts-client-v0.3.0) (2026-03-22)
+
+
+### Features
+
+* **ts-client:** add richtext field type and managed schema flag ([5f0053a](https://github.com/platoorg/plato-clients/commit/5f0053a1ecb79ffbc8f2eb52959db435714a40af))
+* **ts-client:** implement wishlist items 1–9 in generator ([45f3d16](https://github.com/platoorg/plato-clients/commit/45f3d16b3a2e4d78919af9299de034a6abecad85))
+
 ## [0.2.0](https://github.com/platoorg/plato-clients/compare/ts-client-v0.1.3...ts-client-v0.2.0) (2026-03-22)
 
 
