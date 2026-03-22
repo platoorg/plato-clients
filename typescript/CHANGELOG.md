@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.0](https://github.com/platoorg/plato-clients/compare/ts-client-v0.1.3...ts-client-v0.2.0) (2026-03-22)
+
+
+### Features
+
+* **ts-client:** add exports map with ./generated subpath ([dfe8d6e](https://github.com/platoorg/plato-clients/commit/dfe8d6e8278821bbfef7a508295f6fec0a32e784))
+* **ts-client:** add generateDeclarations and generateRuntime ([d14f13d](https://github.com/platoorg/plato-clients/commit/d14f13d97f9a375d782d342e21cccbda569a8783))
+* **ts-client:** add plato-ts generate subcommand ([9734db5](https://github.com/platoorg/plato-clients/commit/9734db586f14f281df7afb02ebf3fea75bba62a2))
+* **ts-client:** ship generated/ stub and re-export PlatoClient ([c3939ad](https://github.com/platoorg/plato-clients/commit/c3939adac7bf4a62a69f3f0432ba1b029a0f124a))
+
 ## [0.1.3](https://github.com/platoorg/plato-clients/compare/ts-client-v0.1.2...ts-client-v0.1.3) (2026-03-18)
 
 
