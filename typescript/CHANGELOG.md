@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/platoorg/plato-clients/compare/ts-client-v0.4.0...ts-client-v0.5.0) (2026-03-27)
+
+
+### Features
+
+* **ts-client:** generate full CRUD client from plato-ts generate ([d419f6f](https://github.com/platoorg/plato-clients/commit/d419f6fc2a9a5b8cbe29a15634256b5d3a6f02f9))
+
+
+### Tests
+
+* fix snapshot tests ([5dceab4](https://github.com/platoorg/plato-clients/commit/5dceab41bd03db8255ec7f72a46aa32f6f9bcdf3))
+
 ## [0.4.0](https://github.com/platoorg/plato-clients/compare/ts-client-v0.3.0...ts-client-v0.4.0) (2026-03-22)
 
 
