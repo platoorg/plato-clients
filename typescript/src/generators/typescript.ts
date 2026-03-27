@@ -325,9 +325,35 @@ function generateClient(schemas: ManifestSchema[]): string {
 
 // ── Section: declarations (.d.ts) ─────────────────────────────────────────────
 
+function generateSingletonDeclarationMethods(schema: ManifestSchema): string[] {
+  const name = toPascalCase(schema.name);
+  return [
+    `  get${name}(): Promise<${name}>;`,
+    `  update${name}(data: Partial<Omit<${name}, keyof PlatoItem>>): Promise<${name}>;`,
+    `  tryGet${name}(): Promise<${name} | null>;`,
+  ];
+}
+
+function generateCollectionDeclarationMethods(schema: ManifestSchema): string[] {
+  const name         = toPascalCase(schema.name);
+  const hasSlugField = schema.fields.some(f => f.name === 'slug');
+  const lines = [
+    `  list${name}(params?: ${name}Params): Promise<${name}[]>;`,
+    `  get${name}(id: string): Promise<${name}>;`,
+    `  create${name}(data: Omit<${name}, keyof PlatoItem>): Promise<${name}>;`,
+    `  update${name}(id: string, data: Partial<Omit<${name}, keyof PlatoItem>>): Promise<${name}>;`,
+    `  delete${name}(id: string): Promise<void>;`,
+    `  find${name}(params: ${name}Params): Promise<${name} | null>;`,
+  ];
+  if (hasSlugField) lines.push(`  get${name}BySlug(slug: string): Promise<${name} | null>;`);
+  lines.push(`  tryList${name}(params?: ${name}Params): Promise<${name}[]>;`);
+  lines.push(`  tryGet${name}(id: string): Promise<${name} | null>;`);
+  return lines;
+}
+
 /**
- * Generate the `.d.ts` declarations file for the new fetchSchema / fetchContent API.
- * This includes typed overloads so `fetchSchema('homepage')` returns `Promise<Homepage>`.
+ * Generate the `.d.ts` declarations file.
+ * Emits typed CRUD method signatures for every schema in the manifest.
  */
 export function generateDeclarations(manifest: Manifest): string {
   const schemas = manifest.schemas.filter(s => !isOrganisational(s));
@@ -367,23 +393,31 @@ export function generateDeclarations(manifest: Manifest): string {
     lines.push('}');
   }
 
+  // Params interfaces for collections
+  for (const schema of schemas.filter(s => !isSingleton(s))) {
+    lines.push('');
+    lines.push(generateParams(schema));
+  }
+
   lines.push('');
   lines.push('export declare class PlatoClient {');
   lines.push('  constructor(baseUrl: string, namespace: string, apiKey?: string);');
   lines.push('  static fromEnv(): PlatoClient;');
+  lines.push('  /** Fetch a singleton by schema slug — typed escape hatch for unlisted schemas. */');
+  lines.push('  getSingleton<T extends PlatoItem>(schema: string): Promise<T>;');
+  lines.push('  /** Fetch a collection by schema slug — typed escape hatch for unlisted schemas. */');
+  lines.push('  getCollection<T extends PlatoItem>(schema: string, params?: Record<string, string | number | boolean>): Promise<T[]>;');
 
   for (const schema of schemas) {
-    const name    = toPascalCase(schema.name);
-    const slug    = toSlug(schema);
-    const retType = isSingleton(schema) ? `Promise<${name}>` : `Promise<${name}[]>`;
-    const kind    = isSingleton(schema) ? 'singleton' : 'collection';
-    lines.push(`  /** Fetch ${schema.name} (${kind}) */`);
-    lines.push(`  fetchSchema(schema: '${slug}'): ${retType};`);
+    lines.push('');
+    const schemaKind = isSingleton(schema) ? 'singleton' : 'collection';
+    lines.push(`  // ── ${schema.name} (${schemaKind}) ${'─'.repeat(Math.max(0, 44 - schema.name.length))}`);
+    const methods = isSingleton(schema)
+      ? generateSingletonDeclarationMethods(schema)
+      : generateCollectionDeclarationMethods(schema);
+    lines.push(...methods);
   }
 
-  lines.push('  fetchSchema(schema: string): Promise<PlatoItem | PlatoItem[]>;');
-  lines.push('  /** Fetch any content item by its ID */');
-  lines.push('  fetchContent(id: string): Promise<PlatoItem>;');
   lines.push('}');
   lines.push('');
 
@@ -392,9 +426,91 @@ export function generateDeclarations(manifest: Manifest): string {
 
 // ── Section: runtime (.js) ────────────────────────────────────────────────────
 
+function generateSingletonRuntimeMethods(schema: ManifestSchema): string[] {
+  const name = toPascalCase(schema.name);
+  const slug = toSlug(schema);
+  return [
+    `  /** Fetch the ${schema.name} singleton. */`,
+    `  async get${name}() {`,
+    `    return this.#get('${slug}');`,
+    `  }`,
+    ``,
+    `  /** Update the ${schema.name} singleton. */`,
+    `  async update${name}(data) {`,
+    `    return this.#put('${slug}', data);`,
+    `  }`,
+    ``,
+    `  /** Like get${name}() but returns null instead of throwing on error. */`,
+    `  async tryGet${name}() {`,
+    `    try { return await this.get${name}(); } catch { return null; }`,
+    `  }`,
+  ];
+}
+
+function generateCollectionRuntimeMethods(schema: ManifestSchema): string[] {
+  const name         = toPascalCase(schema.name);
+  const slug         = toSlug(schema);
+  const hasSlugField = schema.fields.some(f => f.name === 'slug');
+  const lines: string[] = [
+    `  /** List ${schema.name} items. Supports filtering and server-side relation population. */`,
+    `  async list${name}(params) {`,
+    `    const { populate, ...filters } = params ?? {};`,
+    `    return this.#get(\`${slug}\${this.#buildQs(filters, populate)}\`);`,
+    `  }`,
+    ``,
+    `  /** Fetch a single ${schema.name} item by ID. */`,
+    `  async get${name}(id) {`,
+    `    return this.#get(\`${slug}/\${id}\`);`,
+    `  }`,
+    ``,
+    `  /** Create a new ${schema.name} item. */`,
+    `  async create${name}(data) {`,
+    `    return this.#post('${slug}', data);`,
+    `  }`,
+    ``,
+    `  /** Update an existing ${schema.name} item. */`,
+    `  async update${name}(id, data) {`,
+    `    return this.#put(\`${slug}/\${id}\`, data);`,
+    `  }`,
+    ``,
+    `  /** Delete a ${schema.name} item. */`,
+    `  async delete${name}(id) {`,
+    `    await this.#request(\`${slug}/\${id}\`, { method: 'DELETE' });`,
+    `  }`,
+    ``,
+    `  /** Return the first ${schema.name} matching the given params, or null. */`,
+    `  async find${name}(params) {`,
+    `    const results = await this.list${name}(params);`,
+    `    return results[0] ?? null;`,
+    `  }`,
+  ];
+  if (hasSlugField) {
+    lines.push(
+      ``,
+      `  /** Fetch the ${schema.name} with the given slug, or null. */`,
+      `  async get${name}BySlug(slug) {`,
+      `    return this.find${name}({ slug });`,
+      `  }`,
+    );
+  }
+  lines.push(
+    ``,
+    `  /** Like list${name}() but returns [] instead of throwing on error. */`,
+    `  async tryList${name}(params) {`,
+    `    try { return await this.list${name}(params); } catch { return []; }`,
+    `  }`,
+    ``,
+    `  /** Like get${name}() but returns null instead of throwing on error. */`,
+    `  async tryGet${name}(id) {`,
+    `    try { return await this.get${name}(id); } catch { return null; }`,
+    `  }`,
+  );
+  return lines;
+}
+
 /**
- * Generate the `.js` runtime file for the new fetchSchema / fetchContent API.
- * Schema metadata is baked in so `fetchSchema` can resolve slugs at runtime.
+ * Generate the `.js` runtime file.
+ * Emits a full PlatoClient class with typed CRUD methods for every schema.
  */
 export function generateRuntime(manifest: Manifest): string {
   const schemas = manifest.schemas.filter(s => !isOrganisational(s));
@@ -407,57 +523,72 @@ export function generateRuntime(manifest: Manifest): string {
   const lines: string[] = [
     `// Generated by @platoorg/ts-client — run \`npx plato-ts generate\` to regenerate${metaLine}`,
     '',
-    'const SCHEMA_META = {',
+    'export class PlatoClient {',
+    '  #baseUrl;',
+    '  #namespace;',
+    '  #apiKey;',
+    '',
+    '  constructor(baseUrl, namespace, apiKey) {',
+    '    this.#baseUrl    = baseUrl;',
+    '    this.#namespace  = namespace;',
+    '    this.#apiKey     = apiKey;',
+    '  }',
+    '',
+    '  static fromEnv() {',
+    "    const url = process.env['PLATO_URL'];",
+    "    const ns  = process.env['PLATO_NAMESPACE'];",
+    "    if (!url) throw new Error('[plato] PLATO_URL env var is not set');",
+    "    if (!ns)  throw new Error('[plato] PLATO_NAMESPACE env var is not set');",
+    "    return new PlatoClient(url, ns, process.env['PLATO_API_KEY']);",
+    '  }',
+    '',
+    "  #headers() {",
+    "    const h = { 'Content-Type': 'application/json' };",
+    "    if (this.#apiKey) h['Authorization'] = `Bearer ${this.#apiKey}`;",
+    '    return h;',
+    '  }',
+    '',
+    '  async #request(path, init) {',
+    '    const url = `${this.#baseUrl}/api/namespaces/${this.#namespace}/content/${path}`;',
+    '    const res = await fetch(url, { ...init, headers: this.#headers() });',
+    "    if (!res.ok) throw new Error(`Plato ${init?.method ?? 'GET'} ${url}: ${res.status} ${res.statusText}`);",
+    '    return res.json();',
+    '  }',
+    '',
+    '  #buildQs(filters, populate) {',
+    '    const pairs = Object.entries(filters).filter(([, v]) => v != null);',
+    '    const qs = new URLSearchParams(pairs.map(([k, v]) => [k, String(v)]));',
+    "    if (populate?.length) qs.set('populate', populate.join(','));",
+    '    const s = qs.toString();',
+    "    return s ? '?' + s : '';",
+    '  }',
+    '',
+    '  #get(path)        { return this.#request(path); }',
+    "  #post(path, body) { return this.#request(path, { method: 'POST', body: JSON.stringify(body) }); }",
+    "  #put(path, body)  { return this.#request(path, { method: 'PUT',  body: JSON.stringify(body) }); }",
+    '',
+    '  // ── Generic ─────────────────────────────────────────────────',
+    '  /** Fetch a singleton by schema slug — typed escape hatch for unlisted schemas. */',
+    '  async getSingleton(schema) {',
+    '    return this.#get(schema);',
+    '  }',
+    '',
+    '  /** Fetch a collection by schema slug — typed escape hatch for unlisted schemas. */',
+    '  async getCollection(schema, params) {',
+    '    return this.#get(`${schema}${this.#buildQs(params ?? {})}`);',
+    '  }',
   ];
 
   for (const schema of schemas) {
-    const slug = toSlug(schema);
-    lines.push(`  '${slug}': { slug: '${slug}', singleton: ${isSingleton(schema)} },`);
+    lines.push('');
+    const schemaKind = isSingleton(schema) ? 'singleton' : 'collection';
+    lines.push(`  // ── ${schema.name} (${schemaKind}) ${'─'.repeat(Math.max(0, 44 - schema.name.length))}`);
+    const methods = isSingleton(schema)
+      ? generateSingletonRuntimeMethods(schema)
+      : generateCollectionRuntimeMethods(schema);
+    lines.push(...methods);
   }
 
-  lines.push('};');
-  lines.push('');
-  lines.push('export class PlatoClient {');
-  lines.push('  #baseUrl;');
-  lines.push('  #namespace;');
-  lines.push('  #apiKey;');
-  lines.push('');
-  lines.push('  constructor(baseUrl, namespace, apiKey) {');
-  lines.push('    this.#baseUrl    = baseUrl;');
-  lines.push('    this.#namespace  = namespace;');
-  lines.push('    this.#apiKey     = apiKey;');
-  lines.push('  }');
-  lines.push('');
-  lines.push('  static fromEnv() {');
-  lines.push("    const url = process.env['PLATO_URL'];");
-  lines.push("    const ns  = process.env['PLATO_NAMESPACE'];");
-  lines.push("    if (!url) throw new Error('[plato] PLATO_URL env var is not set');");
-  lines.push("    if (!ns)  throw new Error('[plato] PLATO_NAMESPACE env var is not set');");
-  lines.push("    return new PlatoClient(url, ns, process.env['PLATO_API_KEY']);");
-  lines.push('  }');
-  lines.push('');
-  lines.push("  #headers() {");
-  lines.push("    const h = { 'Content-Type': 'application/json' };");
-  lines.push("    if (this.#apiKey) h['Authorization'] = `Bearer ${this.#apiKey}`;");
-  lines.push('    return h;');
-  lines.push('  }');
-  lines.push('');
-  lines.push('  async #request(path, init) {');
-  lines.push('    const url = `${this.#baseUrl}/api/namespaces/${this.#namespace}/content/${path}`;');
-  lines.push('    const res = await fetch(url, { ...init, headers: this.#headers() });');
-  lines.push("    if (!res.ok) throw new Error(`Plato ${init?.method ?? 'GET'} ${url}: ${res.status} ${res.statusText}`);");
-  lines.push('    return res.json();');
-  lines.push('  }');
-  lines.push('');
-  lines.push('  async fetchSchema(schema) {');
-  lines.push('    const meta = SCHEMA_META[schema];');
-  lines.push('    if (!meta) throw new Error(`[plato] Unknown schema: "${schema}". Known: ${Object.keys(SCHEMA_META).join(", ")}`);');
-  lines.push('    return this.#request(meta.slug);');
-  lines.push('  }');
-  lines.push('');
-  lines.push('  async fetchContent(id) {');
-  lines.push('    return this.#request(id);');
-  lines.push('  }');
   lines.push('}');
   lines.push('');
 

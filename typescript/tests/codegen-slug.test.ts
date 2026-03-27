@@ -115,25 +115,38 @@ describe('slug handling in codegen', () => {
 });
 
 describe('generateDeclarations', () => {
-  test('singleton overload returns Promise<T>', () => {
+  test('singleton has get, update, and tryGet method signatures', () => {
     const out = generateDeclarations(makeSingletonManifest());
-    expect(out).toContain("fetchSchema(schema: 'homepage'): Promise<Homepage>");
+    expect(out).toContain('getHomepage(): Promise<Homepage>');
+    expect(out).toContain('updateHomepage(data: Partial<Omit<Homepage, keyof PlatoItem>>): Promise<Homepage>');
+    expect(out).toContain('tryGetHomepage(): Promise<Homepage | null>');
   });
 
-  test('collection overload returns Promise<T[]>', () => {
+  test('collection has list, get, create, update, delete, find, tryList, tryGet signatures', () => {
     const out = generateDeclarations(makeManifest({ name: 'post', type: 'collection' }));
-    expect(out).toContain("fetchSchema(schema: 'post'): Promise<Post[]>");
+    expect(out).toContain('listPost(params?: PostParams): Promise<Post[]>');
+    expect(out).toContain('getPost(id: string): Promise<Post>');
+    expect(out).toContain('createPost(data: Omit<Post, keyof PlatoItem>): Promise<Post>');
+    expect(out).toContain('deletePost(id: string): Promise<void>');
+    expect(out).toContain('tryListPost(params?: PostParams): Promise<Post[]>');
+    expect(out).toContain('tryGetPost(id: string): Promise<Post | null>');
   });
 
-  test('includes fallback overload and fetchContent', () => {
+  test('includes generic escape hatches', () => {
     const out = generateDeclarations(makeSingletonManifest());
-    expect(out).toContain('fetchSchema(schema: string): Promise<PlatoItem | PlatoItem[]>');
-    expect(out).toContain('fetchContent(id: string): Promise<PlatoItem>');
+    expect(out).toContain('getSingleton<T extends PlatoItem>(schema: string): Promise<T>');
+    expect(out).toContain('getCollection<T extends PlatoItem>(schema: string');
   });
 
-  test('respects explicit slug in overload', () => {
+  test('collection includes Params interface', () => {
+    const out = generateDeclarations(makeManifest({ name: 'post', type: 'collection' }));
+    expect(out).toContain('interface PostParams {');
+  });
+
+  test('method name uses PascalCase of schema name regardless of explicit slug', () => {
     const out = generateDeclarations(makeManifest({ name: 'Website Headline', slug: 'website-headline' }));
-    expect(out).toContain("fetchSchema(schema: 'website-headline')");
+    expect(out).toContain('listWebsiteHeadline(');
+    expect(out).toContain('interface WebsiteHeadlineParams');
   });
 
   test('includes schema interfaces', () => {
@@ -143,30 +156,38 @@ describe('generateDeclarations', () => {
 });
 
 describe('generateRuntime', () => {
-  test('includes SCHEMA_META with slug and singleton flag', () => {
+  test('singleton has get, update, and tryGet method bodies', () => {
     const out = generateRuntime(makeSingletonManifest());
-    expect(out).toContain("'homepage': { slug: 'homepage', singleton: true }");
+    expect(out).toContain('async getHomepage()');
+    expect(out).toContain('async updateHomepage(data)');
+    expect(out).toContain('async tryGetHomepage()');
   });
 
-  test('collection has singleton: false', () => {
+  test('collection has list, get, create, update, delete, find, tryList, tryGet method bodies', () => {
     const out = generateRuntime(makeManifest({ name: 'post', type: 'collection' }));
-    expect(out).toContain("singleton: false");
+    expect(out).toContain('async listPost(params)');
+    expect(out).toContain('async getPost(id)');
+    expect(out).toContain('async createPost(data)');
+    expect(out).toContain('async deletePost(id)');
+    expect(out).toContain('async tryListPost(params)');
+    expect(out).toContain('async tryGetPost(id)');
   });
 
-  test('includes fetchSchema and fetchContent methods', () => {
+  test('uses private field accessors (#get, #post, #put, #request)', () => {
     const out = generateRuntime(makeSingletonManifest());
-    expect(out).toContain('async fetchSchema(schema)');
-    expect(out).toContain('async fetchContent(id)');
+    expect(out).toContain('this.#get(');
+    expect(out).toContain('this.#request(');
   });
 
-  test('fetchSchema looks up slug from SCHEMA_META', () => {
+  test('includes generic escape hatches', () => {
     const out = generateRuntime(makeSingletonManifest());
-    expect(out).toContain('SCHEMA_META[schema]');
-    expect(out).toContain('meta.slug');
+    expect(out).toContain('async getSingleton(schema)');
+    expect(out).toContain('async getCollection(schema, params)');
   });
 
-  test('respects explicit slug in SCHEMA_META', () => {
+  test('respects explicit slug in method bodies', () => {
     const out = generateRuntime(makeManifest({ name: 'Website Headline', slug: 'website-headline' }));
-    expect(out).toContain("'website-headline': { slug: 'website-headline'");
+    expect(out).toContain("'website-headline'");
+    expect(out).toContain('`website-headline/');
   });
 });
