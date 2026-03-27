@@ -22,14 +22,35 @@ export interface Post extends PlatoItem {
   tags?: string[]; // IDs of related items
 }
 
+export interface PostParams {
+  title?: string;
+  body?: string;
+  published_at?: string;
+  tags?: string;
+  /** Relation fields to populate server-side (e.g. ["tags", "author"]). */
+  populate?: string[];
+}
+
 export declare class PlatoClient {
   constructor(baseUrl: string, namespace: string, apiKey?: string);
   static fromEnv(): PlatoClient;
-  /** Fetch homepage (singleton) */
-  fetchSchema(schema: 'homepage'): Promise<Homepage>;
-  /** Fetch post (collection) */
-  fetchSchema(schema: 'post'): Promise<Post[]>;
-  fetchSchema(schema: string): Promise<PlatoItem | PlatoItem[]>;
-  /** Fetch any content item by its ID */
-  fetchContent(id: string): Promise<PlatoItem>;
+  /** Fetch a singleton by schema slug — typed escape hatch for unlisted schemas. */
+  getSingleton<T extends PlatoItem>(schema: string): Promise<T>;
+  /** Fetch a collection by schema slug — typed escape hatch for unlisted schemas. */
+  getCollection<T extends PlatoItem>(schema: string, params?: Record<string, string | number | boolean>): Promise<T[]>;
+
+  // ── homepage (singleton) ────────────────────────────────────
+  getHomepage(): Promise<Homepage>;
+  updateHomepage(data: Partial<Omit<Homepage, keyof PlatoItem>>): Promise<Homepage>;
+  tryGetHomepage(): Promise<Homepage | null>;
+
+  // ── post (collection) ────────────────────────────────────────
+  listPost(params?: PostParams): Promise<Post[]>;
+  getPost(id: string): Promise<Post>;
+  createPost(data: Omit<Post, keyof PlatoItem>): Promise<Post>;
+  updatePost(id: string, data: Partial<Omit<Post, keyof PlatoItem>>): Promise<Post>;
+  deletePost(id: string): Promise<void>;
+  findPost(params: PostParams): Promise<Post | null>;
+  tryListPost(params?: PostParams): Promise<Post[]>;
+  tryGetPost(id: string): Promise<Post | null>;
 }
