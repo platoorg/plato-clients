@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/platoorg/plato-clients/compare/ts-client-v0.5.0...ts-client-v0.6.0) (2026-05-03)
+
+
+### Features
+
+* **clients:** emit responsive media types and mediaSrcset helper ([9392d3e](https://github.com/platoorg/plato-clients/commit/9392d3e90a15631e67d660c1293909b8c0620b7f))
+
 ## [0.5.0](https://github.com/platoorg/plato-clients/compare/ts-client-v0.4.0...ts-client-v0.5.0) (2026-03-27)
 
 
