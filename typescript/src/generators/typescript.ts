@@ -28,11 +28,11 @@ const TS_TYPE: Record<string, string> = {
   string:        'string',
   number:        'number',
   boolean:       'boolean',
-  date:          'string',           // ISO 8601 date string
-  media:         'string',           // media asset URL
-  richtext:      'RichTextDocument', // structured rich-text document
-  relation_one:  'string',           // ID of related item
-  relation_many: 'string[]',         // IDs of related items
+  date:          'string',                  // ISO 8601 date string
+  media:         'MediaValue | string',     // object when variants configured, plain URL otherwise
+  richtext:      'RichTextDocument',        // structured rich-text document
+  relation_one:  'string',                  // ID of related item
+  relation_many: 'string[]',                // IDs of related items
 };
 
 /** Map a Plato field type to its TypeScript counterpart inside *Params interfaces. */
@@ -50,7 +50,6 @@ const PARAMS_TS_TYPE: Record<string, string> = {
 /** Inline doc-comment for field types that need clarification. */
 const TS_TYPE_COMMENT: Record<string, string> = {
   date:          'ISO 8601 date string',
-  media:         'media asset URL',
   richtext:      'structured rich-text document',
   relation_one:  'ID of related item',
   relation_many: 'IDs of related items',
@@ -60,6 +59,175 @@ const TS_TYPE_COMMENT: Record<string, string> = {
 function hasRichTextField(schemas: ManifestSchema[]): boolean {
   return schemas.some(s => s.fields.some(f => f.type === 'richtext'));
 }
+
+/** Returns true if any schema in the manifest uses the media field type. */
+function hasMediaField(schemas: ManifestSchema[]): boolean {
+  return schemas.some(s => s.fields.some(f => f.type === 'media'));
+}
+
+// ── Shared media helper ───────────────────────────────────────────────────────
+
+/** Type definitions for media values. Emitted into both .ts and .d.ts outputs. */
+const MEDIA_TYPES_DTS = [
+  '// ── Media ──────────────────────────────────────────────────',
+  '/** A single resized variant generated at upload time. */',
+  'export interface MediaVariant {',
+  '  url: string;',
+  '  width: number;',
+  '}',
+  '/**',
+  ' * Stored value for a `media` field. Plato writes the new shape',
+  ' * ({url, width, height, variants: {name: {url, width}}}); the legacy',
+  ' * shape used variants: {name: "url-string"} and is still tolerated by',
+  ' * mediaSrcset() but produces no srcset (widths are unknown).',
+  ' */',
+  'export interface MediaValue {',
+  '  url: string;',
+  '  width?: number;',
+  '  height?: number;',
+  '  variants?: Record<string, MediaVariant | string>;',
+  '}',
+  '/** Result of mediaSrcset(). Spread into <img {...result} alt="..." />. */',
+  'export interface MediaSrcsetResult {',
+  '  src: string;',
+  '  srcset?: string;',
+  '  sizes?: string;',
+  '  width?: number;',
+  '  height?: number;',
+  '}',
+  '/**',
+  ' * Build src / srcset / sizes attributes from a Plato media value.',
+  ' * Returns null when no usable URL is present.',
+  ' */',
+  'export declare function mediaSrcset(',
+  '  value: MediaValue | string | null | undefined,',
+  '  sizes?: string,',
+  '): MediaSrcsetResult | null;',
+].join('\n');
+
+/** Type definitions + runtime implementation for the .ts (single-file) output. */
+const MEDIA_TYPES_TS = [
+  '// ── Media ──────────────────────────────────────────────────',
+  '/** A single resized variant generated at upload time. */',
+  'export interface MediaVariant {',
+  '  url: string;',
+  '  width: number;',
+  '}',
+  '/**',
+  ' * Stored value for a `media` field. Plato writes the new shape',
+  ' * ({url, width, height, variants: {name: {url, width}}}); the legacy',
+  ' * shape used variants: {name: "url-string"} and is still tolerated by',
+  ' * mediaSrcset() but produces no srcset (widths are unknown).',
+  ' */',
+  'export interface MediaValue {',
+  '  url: string;',
+  '  width?: number;',
+  '  height?: number;',
+  '  variants?: Record<string, MediaVariant | string>;',
+  '}',
+  '/** Result of mediaSrcset(). Spread into <img {...result} alt="..." />. */',
+  'export interface MediaSrcsetResult {',
+  '  src: string;',
+  '  srcset?: string;',
+  '  sizes?: string;',
+  '  width?: number;',
+  '  height?: number;',
+  '}',
+  '/**',
+  ' * Build src / srcset / sizes attributes from a Plato media value.',
+  ' * Returns null when no usable URL is present.',
+  ' */',
+  'export function mediaSrcset(',
+  '  value: MediaValue | string | null | undefined,',
+  '  sizes?: string,',
+  '): MediaSrcsetResult | null {',
+  '  if (value == null) return null;',
+  "  if (typeof value === 'string') return value ? { src: value } : null;",
+  '  if (!value.url && !value.variants) return null;',
+  '',
+  '  const entries: Array<{ url: string; width: number }> = [];',
+  '  let maxWidth = 0;',
+  '  if (value.variants) {',
+  '    for (const raw of Object.values(value.variants)) {',
+  "      if (!raw || typeof raw !== 'object') continue;",
+  '      const { url, width } = raw;',
+  '      if (!url || !width || width <= 0) continue;',
+  '      entries.push({ url, width });',
+  '      if (width > maxWidth) maxWidth = width;',
+  '    }',
+  '  }',
+  '',
+  '  const dims: { width?: number; height?: number } = {};',
+  "  if (typeof value.width === 'number')  dims.width  = value.width;",
+  "  if (typeof value.height === 'number') dims.height = value.height;",
+  '',
+  '  if (entries.length === 0) {',
+  '    return value.url ? { src: value.url, ...dims } : null;',
+  '  }',
+  '',
+  '  if (value.url) {',
+  '    const w = (value.width ?? 0) > maxWidth ? value.width! : maxWidth + 1;',
+  '    entries.push({ url: value.url, width: w });',
+  '  }',
+  '  entries.sort((a, b) => a.width - b.width);',
+  '',
+  "  const srcset = entries.map(e => `${e.url} ${e.width}w`).join(', ');",
+  '  return {',
+  '    src: value.url || entries[entries.length - 1].url,',
+  '    srcset,',
+  '    ...(sizes ? { sizes } : {}),',
+  '    ...dims,',
+  '  };',
+  '}',
+].join('\n');
+
+/** JavaScript-only runtime implementation of mediaSrcset — used in .js output. */
+const MEDIA_RUNTIME_JS = [
+  '// ── Media ──────────────────────────────────────────────────',
+  '/**',
+  ' * Build src / srcset / sizes attributes from a Plato media value.',
+  ' * Returns null when no usable URL is present.',
+  ' */',
+  'export function mediaSrcset(value, sizes) {',
+  '  if (value == null) return null;',
+  "  if (typeof value === 'string') return value ? { src: value } : null;",
+  '  if (!value.url && !value.variants) return null;',
+  '',
+  '  const entries = [];',
+  '  let maxWidth = 0;',
+  '  if (value.variants) {',
+  '    for (const raw of Object.values(value.variants)) {',
+  "      if (!raw || typeof raw !== 'object') continue;",
+  '      const { url, width } = raw;',
+  '      if (!url || !width || width <= 0) continue;',
+  '      entries.push({ url, width });',
+  '      if (width > maxWidth) maxWidth = width;',
+  '    }',
+  '  }',
+  '',
+  '  const dims = {};',
+  "  if (typeof value.width === 'number')  dims.width  = value.width;",
+  "  if (typeof value.height === 'number') dims.height = value.height;",
+  '',
+  '  if (entries.length === 0) {',
+  '    return value.url ? { src: value.url, ...dims } : null;',
+  '  }',
+  '',
+  '  if (value.url) {',
+  '    const w = (value.width ?? 0) > maxWidth ? value.width : maxWidth + 1;',
+  '    entries.push({ url: value.url, width: w });',
+  '  }',
+  '  entries.sort((a, b) => a.width - b.width);',
+  '',
+  "  const srcset = entries.map(e => `${e.url} ${e.width}w`).join(', ');",
+  '  return {',
+  '    src: value.url || entries[entries.length - 1].url,',
+  '    srcset,',
+  '    ...(sizes ? { sizes } : {}),',
+  '    ...dims,',
+  '  };',
+  '}',
+].join('\n');
 
 /** Returns true if the schema should be excluded from codegen. */
 function isOrganisational(schema: ManifestSchema): boolean {
@@ -90,6 +258,11 @@ function generateTypes(schemas: ManifestSchema[]): string {
     lines.push("  type: 'doc';");
     lines.push('  content: RichTextNode[];');
     lines.push('}');
+    lines.push('');
+  }
+
+  if (hasMediaField(schemas)) {
+    lines.push(MEDIA_TYPES_TS);
     lines.push('');
   }
 
@@ -374,6 +547,11 @@ export function generateDeclarations(manifest: Manifest): string {
     lines.push('');
   }
 
+  if (hasMediaField(schemas)) {
+    lines.push(MEDIA_TYPES_DTS);
+    lines.push('');
+  }
+
   lines.push(
     'export interface PlatoItem {',
     '  id: string;',
@@ -523,6 +701,14 @@ export function generateRuntime(manifest: Manifest): string {
   const lines: string[] = [
     `// Generated by @platoorg/ts-client — run \`npx plato-ts generate\` to regenerate${metaLine}`,
     '',
+  ];
+
+  if (hasMediaField(schemas)) {
+    lines.push(MEDIA_RUNTIME_JS);
+    lines.push('');
+  }
+
+  lines.push(
     'export class PlatoClient {',
     '  #baseUrl;',
     '  #namespace;',
@@ -577,7 +763,7 @@ export function generateRuntime(manifest: Manifest): string {
     '  async getCollection(schema, params) {',
     '    return this.#get(`${schema}${this.#buildQs(params ?? {})}`);',
     '  }',
-  ];
+  );
 
   for (const schema of schemas) {
     lines.push('');

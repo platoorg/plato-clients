@@ -12,11 +12,98 @@ export const PlatoItemSchema = z.object({
 });
 export type PlatoItem = z.infer<typeof PlatoItemSchema>;
 
+// ── Media ──────────────────────────────────────────────────
+/** Single resized variant generated at upload time. */
+export const MediaVariantSchema = z.object({
+  url: z.string(),
+  width: z.number(),
+});
+export type MediaVariant = z.infer<typeof MediaVariantSchema>;
+
+/**
+ * Stored value for a `media` field. The new shape carries widths inside
+ * each variant entry; the legacy shape used variant URL strings and is
+ * tolerated here via z.union (mediaSrcset() will skip string variants
+ * since their widths are unknown at runtime).
+ */
+export const MediaValueSchema = z.object({
+  url: z.string(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  variants: z.record(z.string(), z.union([MediaVariantSchema, z.string()])).optional(),
+});
+export type MediaValue = z.infer<typeof MediaValueSchema>;
+
+/**
+ * On-the-wire schema for a `media` field. The server returns:
+ *   - a plain URL string when no variants are configured on the field
+ *     (or for plain-string assets uploaded before responsive media existed), or
+ *   - a MediaValue object when variants are configured.
+ * mediaSrcset() accepts either form.
+ */
+export const MediaFieldSchema = z.union([MediaValueSchema, z.string()]);
+
+/** Result of mediaSrcset(). Spread into <img {...result} alt="..." />. */
+export interface MediaSrcsetResult {
+  src: string;
+  srcset?: string;
+  sizes?: string;
+  width?: number;
+  height?: number;
+}
+
+/**
+ * Build src / srcset / sizes attributes from a Plato media value.
+ * Returns null when no usable URL is present.
+ */
+export function mediaSrcset(
+  value: MediaValue | string | null | undefined,
+  sizes?: string,
+): MediaSrcsetResult | null {
+  if (value == null) return null;
+  if (typeof value === 'string') return value ? { src: value } : null;
+  if (!value.url && !value.variants) return null;
+
+  const entries: Array<{ url: string; width: number }> = [];
+  let maxWidth = 0;
+  if (value.variants) {
+    for (const raw of Object.values(value.variants)) {
+      if (!raw || typeof raw !== 'object') continue;
+      const { url, width } = raw;
+      if (!url || !width || width <= 0) continue;
+      entries.push({ url, width });
+      if (width > maxWidth) maxWidth = width;
+    }
+  }
+
+  const dims: { width?: number; height?: number } = {};
+  if (typeof value.width === 'number')  dims.width  = value.width;
+  if (typeof value.height === 'number') dims.height = value.height;
+
+  if (entries.length === 0) {
+    return value.url ? { src: value.url, ...dims } : null;
+  }
+
+  if (value.url) {
+    const w = (value.width ?? 0) > maxWidth ? value.width! : maxWidth + 1;
+    entries.push({ url: value.url, width: w });
+  }
+  entries.sort((a, b) => a.width - b.width);
+
+  const srcset = entries.map(e => `${e.url} ${e.width}w`).join(', ');
+  return {
+    src: value.url || entries[entries.length - 1].url,
+    srcset,
+    ...(sizes ? { sizes } : {}),
+    ...dims,
+  };
+}
+
 /** singleton */
 export const HomepageSchema = PlatoItemSchema.extend({
   hero_title: z.string(),
   hero_subtitle: z.string().optional(),
-  hero_image: z.string().url().optional(), // media asset URL
+  hero_image: MediaFieldSchema.optional(),
 });
 export type Homepage = z.infer<typeof HomepageSchema>;
 
