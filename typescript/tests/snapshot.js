@@ -159,4 +159,47 @@ export class PlatoClient {
   async tryGetPost(id) {
     try { return await this.getPost(id); } catch { return null; }
   }
+
+  // ── article (collection) ─────────────────────────────────────
+  /** List article items. Supports filtering and server-side relation population. */
+  async listArticle(params) {
+    const { populate, ...filters } = params ?? {};
+    return this.#get(`article${this.#buildQs(filters, populate)}`);
+  }
+
+  /** Fetch a single article item by ID. */
+  async getArticle(id) {
+    return this.#get(`article/${id}`);
+  }
+
+  /** Create a new article item. */
+  async createArticle(data) {
+    return this.#post('article', data);
+  }
+
+  /** Update an existing article item. */
+  async updateArticle(id, data) {
+    return this.#put(`article/${id}`, data);
+  }
+
+  /** Delete a article item. */
+  async deleteArticle(id) {
+    await this.#request(`article/${id}`, { method: 'DELETE' });
+  }
+
+  /** Return the first article matching the given params, or null. */
+  async findArticle(params) {
+    const results = await this.listArticle(params);
+    return results[0] ?? null;
+  }
+
+  /** Like listArticle() but returns [] instead of throwing on error. */
+  async tryListArticle(params) {
+    try { return await this.listArticle(params); } catch { return []; }
+  }
+
+  /** Like getArticle() but returns null instead of throwing on error. */
+  async tryGetArticle(id) {
+    try { return await this.getArticle(id); } catch { return null; }
+  }
 }

@@ -75,7 +75,7 @@ test-zod:
         -v {{CACHE_ZOD_MODULES}}:/work/zod/node_modules \
         -w /work {{IMAGE_ZOD}} bash -c "\
         {{APT}} && \
-        cd zod && npm install && npm run build && \
+        cd zod && npm install && npm run build && npm test && \
         bash tests/run.sh"
 
 test-go:

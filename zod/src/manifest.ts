@@ -13,6 +13,13 @@ export interface ManifestField {
   name: string;
   type: FieldType;
   required?: boolean;
+  is_title?: boolean;
+}
+
+export interface ManifestSuperset {
+  name: string;
+  description?: string;
+  fields: ManifestField[];
 }
 
 export interface ManifestSchema {
@@ -21,10 +28,12 @@ export interface ManifestSchema {
   type?: SchemaType;
   singleton?: boolean;  // alternative to type: 'singleton'
   fields: ManifestField[];
+  extends?: string[];
 }
 
 export interface Manifest {
   namespace: string;
   public: boolean;
   schemas: ManifestSchema[];
+  supersets?: ManifestSuperset[];
 }

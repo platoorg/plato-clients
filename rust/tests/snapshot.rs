@@ -56,6 +56,26 @@ pub struct Post {
     pub tags: Vec<String>, // IDs of related items
 }
 
+/// Article is a collection item.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct Article {
+    pub id: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meta_description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cover_image: Option<String>, // media asset URL
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub og_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Query params structs (collections only)
 // ---------------------------------------------------------------------------
@@ -67,6 +87,17 @@ pub struct PostParams {
     pub body: Option<String>,
     pub published_at: Option<String>,
     pub tags: Option<String>,
+}
+
+/// Query parameters for filtering/searching Article.
+#[derive(Debug, Default)]
+pub struct ArticleParams {
+    pub title: Option<String>,
+    pub body: Option<String>,
+    pub meta_description: Option<String>,
+    pub cover_image: Option<String>,
+    pub og_title: Option<String>,
+    pub author: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +280,60 @@ impl PlatoClient {
     /// Delete a post item by ID.
     pub fn delete_post(&self, id: &str) -> Result<(), reqwest::Error> {
         self.delete(&format!("post/{}", id))
+    }
+}
+
+impl PlatoClient {
+    /// List all article items, with optional query filters.
+    pub fn list_article(
+        &self,
+        params: Option<ArticleParams>,
+    ) -> Result<Vec<Article>, reqwest::Error> {
+        let query: Vec<(String, String)> = params
+            .map(|p| {
+                let mut pairs: Vec<(String, String)> = Vec::new();
+                if let Some(v) = p.title { pairs.push(("title".to_string(), v)); }
+                if let Some(v) = p.body { pairs.push(("body".to_string(), v)); }
+                if let Some(v) = p.meta_description { pairs.push(("meta_description".to_string(), v)); }
+                if let Some(v) = p.cover_image { pairs.push(("cover_image".to_string(), v)); }
+                if let Some(v) = p.og_title { pairs.push(("og_title".to_string(), v)); }
+                if let Some(v) = p.author { pairs.push(("author".to_string(), v)); }
+                pairs
+            })
+            .unwrap_or_default();
+
+        if query.is_empty() {
+            self.get("article")
+        } else {
+            self.get_with_query("article", &query)
+        }
+    }
+
+    /// Fetch a single article item by ID.
+    pub fn get_article(&self, id: &str) -> Result<Article, reqwest::Error> {
+        self.get(&format!("article/{}", id))
+    }
+
+    /// Create a new article item.
+    pub fn create_article(
+        &self,
+        data: &HashMap<String, serde_json::Value>,
+    ) -> Result<Article, reqwest::Error> {
+        self.post("article", data)
+    }
+
+    /// Update an existing article item by ID.
+    pub fn update_article(
+        &self,
+        id: &str,
+        data: &HashMap<String, serde_json::Value>,
+    ) -> Result<Article, reqwest::Error> {
+        self.put(&format!("article/{}", id), data)
+    }
+
+    /// Delete a article item by ID.
+    pub fn delete_article(&self, id: &str) -> Result<(), reqwest::Error> {
+        self.delete(&format!("article/{}", id))
     }
 }
 

@@ -18,6 +18,7 @@ import fs   from 'node:fs';
 import path from 'node:path';
 import { generateZod } from './generators/zod.js';
 import type { Manifest } from './manifest.js';
+import { expandManifest } from './expand.js';
 
 // ── Arg parsing ───────────────────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ try {
 
 // ── Generate ──────────────────────────────────────────────────────────────────
 
-const output = generateZod(manifest);
+const output = generateZod(expandManifest(manifest));
 
 // ── Write output ──────────────────────────────────────────────────────────────
 

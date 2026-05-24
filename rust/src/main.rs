@@ -12,6 +12,14 @@ struct Manifest {
     #[serde(default)]
     public: bool,
     schemas: Vec<ManifestSchema>,
+    #[serde(default)]
+    supersets: Vec<ManifestSuperset>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestSuperset {
+    name: String,
+    fields: Vec<ManifestField>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -21,15 +29,84 @@ struct ManifestSchema {
     schema_type: String, // "singleton" | "collection"
     #[serde(default)]
     fields: Vec<ManifestField>,
+    #[serde(default)]
+    extends: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct ManifestField {
     name: String,
     #[serde(rename = "type")]
     field_type: String,
     #[serde(default)]
     required: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Built-in supersets
+// ---------------------------------------------------------------------------
+
+fn builtin_supersets() -> Vec<ManifestSuperset> {
+    vec![ManifestSuperset {
+        name: "page".to_string(),
+        fields: vec![
+            ManifestField { name: "title".to_string(), field_type: "string".to_string(), required: true },
+            ManifestField { name: "body".to_string(), field_type: "string".to_string(), required: false },
+            ManifestField { name: "meta_description".to_string(), field_type: "string".to_string(), required: false },
+            ManifestField { name: "cover_image".to_string(), field_type: "media".to_string(), required: false },
+        ],
+    }]
+}
+
+fn apply_fields(
+    fields: &[ManifestField],
+    merged: &mut Vec<ManifestField>,
+    index_by_name: &mut std::collections::HashMap<String, usize>,
+) {
+    for field in fields {
+        if let Some(&idx) = index_by_name.get(&field.name) {
+            merged[idx] = field.clone();
+        } else {
+            index_by_name.insert(field.name.clone(), merged.len());
+            merged.push(field.clone());
+        }
+    }
+}
+
+// Resolve supersets and extends in the manifest, returning a flat manifest.
+fn expand_manifest(mut manifest: Manifest) -> Manifest {
+    use std::collections::HashMap;
+
+    let mut superset_map: HashMap<String, Vec<ManifestField>> = HashMap::new();
+    for s in builtin_supersets() {
+        superset_map.insert(s.name, s.fields);
+    }
+    for s in &manifest.supersets {
+        superset_map.insert(s.name.clone(), s.fields.clone());
+    }
+
+    for schema in &mut manifest.schemas {
+        let mut merged: Vec<ManifestField> = Vec::new();
+        let mut index_by_name: HashMap<String, usize> = HashMap::new();
+
+        let extends = schema.extends.clone();
+        let own_fields = schema.fields.clone();
+        for name in &extends {
+            match superset_map.get(name) {
+                Some(fields) => apply_fields(fields, &mut merged, &mut index_by_name),
+                None => eprintln!(
+                    "plato-codegen: unknown superset {:?} referenced by schema {:?} — skipping",
+                    name, schema.name
+                ),
+            }
+        }
+        apply_fields(&own_fields, &mut merged, &mut index_by_name);
+
+        schema.fields = merged;
+        schema.extends = Vec::new();
+    }
+
+    manifest
 }
 
 // ---------------------------------------------------------------------------
@@ -645,6 +722,7 @@ fn main() {
     });
 
     // Generate output
+    let manifest = expand_manifest(manifest);
     let code = generate(&manifest);
 
     // Write output
@@ -726,6 +804,7 @@ mod tests {
         let manifest = Manifest {
             namespace: "website".to_string(),
             public: true,
+            supersets: vec![],
             schemas: vec![
                 ManifestSchema {
                     name: "homepage".to_string(),
@@ -735,6 +814,7 @@ mod tests {
                         field_type: "string".to_string(),
                         required: true,
                     }],
+                    extends: vec![],
                 },
                 ManifestSchema {
                     name: "post".to_string(),
@@ -744,6 +824,7 @@ mod tests {
                         field_type: "string".to_string(),
                         required: true,
                     }],
+                    extends: vec![],
                 },
             ],
         };
@@ -769,10 +850,12 @@ mod tests {
         let manifest = Manifest {
             namespace: "test".to_string(),
             public: false,
+            supersets: vec![],
             schemas: vec![ManifestSchema {
                 name: "demo_counter".to_string(),
                 schema_type: "collection".to_string(),
                 fields: vec![],
+                extends: vec![],
             }],
         };
 
@@ -786,6 +869,7 @@ mod tests {
         let manifest = Manifest {
             namespace: "test".to_string(),
             public: true,
+            supersets: vec![],
             schemas: vec![ManifestSchema {
                 name: "post".to_string(),
                 schema_type: "collection".to_string(),
@@ -794,6 +878,7 @@ mod tests {
                     field_type: "relation_many".to_string(),
                     required: false,
                 }],
+                extends: vec![],
             }],
         };
 
@@ -808,6 +893,7 @@ mod tests {
         let manifest = Manifest {
             namespace: "n".to_string(),
             public: false,
+            supersets: vec![],
             schemas: vec![],
         };
         let code = generate(&manifest);
@@ -815,5 +901,124 @@ mod tests {
         assert!(code.contains("#![allow(dead_code)]"));
         assert!(code.contains("use serde::{Deserialize, Serialize};"));
         assert!(code.contains("use std::collections::HashMap;"));
+    }
+
+    #[test]
+    fn test_expand_manifest_inlines_superset() {
+        let manifest = Manifest {
+            namespace: "test".to_string(),
+            public: false,
+            supersets: vec![ManifestSuperset {
+                name: "base".to_string(),
+                fields: vec![ManifestField { name: "title".to_string(), field_type: "string".to_string(), required: true }],
+            }],
+            schemas: vec![ManifestSchema {
+                name: "post".to_string(),
+                schema_type: "collection".to_string(),
+                fields: vec![ManifestField { name: "body".to_string(), field_type: "string".to_string(), required: false }],
+                extends: vec!["base".to_string()],
+            }],
+        };
+
+        let result = expand_manifest(manifest);
+        let fields = &result.schemas[0].fields;
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].name, "title");
+        assert_eq!(fields[1].name, "body");
+    }
+
+    #[test]
+    fn test_expand_manifest_override_replaces_in_place() {
+        let manifest = Manifest {
+            namespace: "test".to_string(),
+            public: false,
+            supersets: vec![ManifestSuperset {
+                name: "base".to_string(),
+                fields: vec![
+                    ManifestField { name: "title".to_string(), field_type: "string".to_string(), required: false },
+                    ManifestField { name: "slug".to_string(), field_type: "string".to_string(), required: false },
+                ],
+            }],
+            schemas: vec![ManifestSchema {
+                name: "post".to_string(),
+                schema_type: "collection".to_string(),
+                fields: vec![ManifestField { name: "title".to_string(), field_type: "string".to_string(), required: true }],
+                extends: vec!["base".to_string()],
+            }],
+        };
+
+        let result = expand_manifest(manifest);
+        let fields = &result.schemas[0].fields;
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].name, "title");
+        assert!(fields[0].required);
+        assert_eq!(fields[1].name, "slug");
+    }
+
+    #[test]
+    fn test_expand_manifest_unknown_superset_skipped() {
+        let manifest = Manifest {
+            namespace: "test".to_string(),
+            public: false,
+            supersets: vec![],
+            schemas: vec![ManifestSchema {
+                name: "post".to_string(),
+                schema_type: "collection".to_string(),
+                fields: vec![ManifestField { name: "body".to_string(), field_type: "string".to_string(), required: false }],
+                extends: vec!["nonexistent".to_string()],
+            }],
+        };
+
+        let result = expand_manifest(manifest);
+        let fields = &result.schemas[0].fields;
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].name, "body");
+    }
+
+    #[test]
+    fn test_expand_manifest_builtin_page_superset() {
+        let manifest = Manifest {
+            namespace: "test".to_string(),
+            public: false,
+            supersets: vec![],
+            schemas: vec![ManifestSchema {
+                name: "blog_post".to_string(),
+                schema_type: "collection".to_string(),
+                fields: vec![ManifestField { name: "author".to_string(), field_type: "string".to_string(), required: false }],
+                extends: vec!["page".to_string()],
+            }],
+        };
+
+        let result = expand_manifest(manifest);
+        let names: Vec<&str> = result.schemas[0].fields.iter().map(|f| f.name.as_str()).collect();
+        assert!(names.contains(&"title"));
+        assert!(names.contains(&"body"));
+        assert!(names.contains(&"meta_description"));
+        assert!(names.contains(&"cover_image"));
+        assert!(names.contains(&"author"));
+        assert_eq!(names.last(), Some(&"author"));
+    }
+
+    #[test]
+    fn test_expand_manifest_user_superset_overrides_builtin() {
+        let manifest = Manifest {
+            namespace: "test".to_string(),
+            public: false,
+            supersets: vec![ManifestSuperset {
+                name: "page".to_string(),
+                fields: vec![ManifestField { name: "custom_title".to_string(), field_type: "string".to_string(), required: true }],
+            }],
+            schemas: vec![ManifestSchema {
+                name: "blog_post".to_string(),
+                schema_type: "collection".to_string(),
+                fields: vec![],
+                extends: vec!["page".to_string()],
+            }],
+        };
+
+        let result = expand_manifest(manifest);
+        let fields = &result.schemas[0].fields;
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].name, "custom_title");
     }
 }

@@ -8,6 +8,9 @@ for arg in "$@"; do [[ "$arg" == "--update" ]] && UPDATE=1; done
 GENERATED="$(mktemp /tmp/snapshot.XXXXXX.go)"
 trap 'rm -f "$GENERATED"' EXIT
 
+# Unit tests
+(cd "$LANG_ROOT" && go test ./...)
+
 (cd "$LANG_ROOT" && go build -buildvcs=false -o /tmp/plato-client-go . && /tmp/plato-client-go "$DIR/fixture.json" "$GENERATED")
 
 if [[ "$UPDATE" -eq 1 ]]; then

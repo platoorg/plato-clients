@@ -9,6 +9,54 @@ require "fileutils"
 #   ruby_source = PlatoCodegen.generate(manifest)
 #   File.write("plato_client.rb", ruby_source)
 module PlatoCodegen
+  BUILTIN_SUPERSETS = [
+    {
+      "name" => "page",
+      "fields" => [
+        { "name" => "title", "type" => "string", "required" => true, "is_title" => true },
+        { "name" => "body", "type" => "string" },
+        { "name" => "meta_description", "type" => "string" },
+        { "name" => "cover_image", "type" => "media" }
+      ]
+    }
+  ].freeze
+
+  def self.expand_manifest(manifest)
+    superset_map = {}
+    BUILTIN_SUPERSETS.each { |s| superset_map[s["name"]] = s["fields"] }
+    (manifest["supersets"] || []).each { |s| superset_map[s["name"]] = s["fields"] }
+
+    expanded_schemas = (manifest["schemas"] || []).map do |schema|
+      merged = []
+      index_by_name = {}
+
+      apply = lambda do |fields|
+        (fields || []).each do |field|
+          name = field["name"]
+          if index_by_name.key?(name)
+            merged[index_by_name[name]] = field
+          else
+            index_by_name[name] = merged.length
+            merged << field
+          end
+        end
+      end
+
+      (schema["extends"] || []).each do |superset_name|
+        unless superset_map.key?(superset_name)
+          warn "plato: unknown superset #{superset_name.inspect} referenced by schema #{schema["name"].inspect} — skipping"
+          next
+        end
+        apply.call(superset_map[superset_name])
+      end
+      apply.call(schema["fields"])
+
+      schema.merge("fields" => merged, "extends" => [])
+    end
+
+    manifest.merge("schemas" => expanded_schemas)
+  end
+
   # Map Plato field types to Ruby type documentation strings.
   RUBY_TYPE_MAP = {
     "string"       => "String",
@@ -33,6 +81,7 @@ module PlatoCodegen
   # @param manifest [Hash] parsed plato-manifest.json
   # @return [String] Ruby source code
   def self.generate(manifest)
+    manifest  = expand_manifest(manifest)
     namespace = manifest["namespace"] || raise(ArgumentError, "manifest missing 'namespace'")
     schemas   = manifest["schemas"]   || raise(ArgumentError, "manifest missing 'schemas'")
 
@@ -303,7 +352,7 @@ module PlatoCodegen
     RUBY
   end
 
-  private_class_method :file_header, :base_module_open, :generate_struct,
+  private_class_method :expand_manifest, :file_header, :base_module_open, :generate_struct,
                        :client_class, :generate_singleton_methods,
                        :generate_collection_methods
 end

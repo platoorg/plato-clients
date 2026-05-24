@@ -1,6 +1,15 @@
 {
   "namespace": "website",
   "public": true,
+  "supersets": [
+    {
+      "name": "seo_meta",
+      "fields": [
+        { "name": "meta_description", "type": "string" },
+        { "name": "og_title", "type": "string" }
+      ]
+    }
+  ],
   "schemas": [
     {
       "name": "homepage",
@@ -19,6 +28,14 @@
         { "name": "body", "type": "string" },
         { "name": "published_at", "type": "date" },
         { "name": "tags", "type": "relation_many" }
+      ]
+    },
+    {
+      "name": "article",
+      "type": "collection",
+      "extends": ["page", "seo_meta"],
+      "fields": [
+        { "name": "author", "type": "string" }
       ]
     }
   ]

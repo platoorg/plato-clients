@@ -36,12 +36,33 @@ type Post struct {
 	Tags        []string `json:"tags"` // IDs of related items
 }
 
+// Article is a collection item.
+type Article struct {
+	PlatoItem
+	Title           string  `json:"title"`
+	Body            *string `json:"body,omitempty"`
+	MetaDescription *string `json:"meta_description,omitempty"`
+	CoverImage      *string `json:"cover_image,omitempty"` // media asset URL
+	OgTitle         *string `json:"og_title,omitempty"`
+	Author          *string `json:"author,omitempty"`
+}
+
 // PostParams holds optional filter parameters for ListPost.
 type PostParams struct {
 	Title       *string
 	Body        *string
 	PublishedAt *string
 	Tags        *string
+}
+
+// ArticleParams holds optional filter parameters for ListArticle.
+type ArticleParams struct {
+	Title           *string
+	Body            *string
+	MetaDescription *string
+	CoverImage      *string
+	OgTitle         *string
+	Author          *string
 }
 
 // PlatoClient communicates with a Plato REST API.
@@ -227,5 +248,75 @@ func (c *PlatoClient) UpdatePost(id string, data map[string]any) (*Post, error) 
 // DeletePost deletes a Post by ID.
 func (c *PlatoClient) DeletePost(id string) error {
 	return c.delete("post/" + id)
+}
+
+// ListArticle returns article items, optionally filtered.
+func (c *PlatoClient) ListArticle(params *ArticleParams) ([]Article, error) {
+	path := "article"
+	if params != nil {
+		q := url.Values{}
+		if params.Title != nil {
+			q.Set("title", *params.Title)
+		}
+		if params.Body != nil {
+			q.Set("body", *params.Body)
+		}
+		if params.MetaDescription != nil {
+			q.Set("meta_description", *params.MetaDescription)
+		}
+		if params.CoverImage != nil {
+			q.Set("cover_image", *params.CoverImage)
+		}
+		if params.OgTitle != nil {
+			q.Set("og_title", *params.OgTitle)
+		}
+		if params.Author != nil {
+			q.Set("author", *params.Author)
+		}
+		if encoded := q.Encode(); encoded != "" {
+			path += "?" + encoded
+		}
+	}
+	data, err := c.get(path)
+	if err != nil {
+		return nil, err
+	}
+	var items []Article
+	return items, json.Unmarshal(data, &items)
+}
+
+// GetArticle fetches a single Article by ID.
+func (c *PlatoClient) GetArticle(id string) (*Article, error) {
+	data, err := c.get("article/" + id)
+	if err != nil {
+		return nil, err
+	}
+	var item Article
+	return &item, json.Unmarshal(data, &item)
+}
+
+// CreateArticle creates a new Article.
+func (c *PlatoClient) CreateArticle(data map[string]any) (*Article, error) {
+	respData, err := c.post("article", data)
+	if err != nil {
+		return nil, err
+	}
+	var item Article
+	return &item, json.Unmarshal(respData, &item)
+}
+
+// UpdateArticle updates an existing Article by ID.
+func (c *PlatoClient) UpdateArticle(id string, data map[string]any) (*Article, error) {
+	respData, err := c.put("article/"+id, data)
+	if err != nil {
+		return nil, err
+	}
+	var item Article
+	return &item, json.Unmarshal(respData, &item)
+}
+
+// DeleteArticle deletes a Article by ID.
+func (c *PlatoClient) DeleteArticle(id string) error {
+	return c.delete("article/" + id)
 }
 

@@ -8,6 +8,9 @@ for arg in "$@"; do [[ "$arg" == "--update" ]] && UPDATE=1; done
 GENERATED="$(mktemp /tmp/snapshot.XXXXXX.rb)"
 trap 'rm -f "$GENERATED"' EXIT
 
+# Unit tests
+ruby "$LANG_ROOT/tests/superset_test.rb"
+
 ruby "$LANG_ROOT/exe/plato-client" "$DIR/fixture.json" "$GENERATED"
 
 if [[ "$UPDATE" -eq 1 ]]; then

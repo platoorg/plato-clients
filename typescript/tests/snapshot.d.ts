@@ -57,11 +57,32 @@ export interface Post extends PlatoItem {
   tags?: string[]; // IDs of related items
 }
 
+/** collection */
+export interface Article extends PlatoItem {
+  title: string;
+  body?: string;
+  meta_description?: string;
+  cover_image?: MediaValue | string;
+  og_title?: string;
+  author?: string;
+}
+
 export interface PostParams {
   title?: string;
   body?: string;
   published_at?: string;
   tags?: string;
+  /** Relation fields to populate server-side (e.g. ["tags", "author"]). */
+  populate?: string[];
+}
+
+export interface ArticleParams {
+  title?: string;
+  body?: string;
+  meta_description?: string;
+  cover_image?: string;
+  og_title?: string;
+  author?: string;
   /** Relation fields to populate server-side (e.g. ["tags", "author"]). */
   populate?: string[];
 }
@@ -88,4 +109,14 @@ export declare class PlatoClient {
   findPost(params: PostParams): Promise<Post | null>;
   tryListPost(params?: PostParams): Promise<Post[]>;
   tryGetPost(id: string): Promise<Post | null>;
+
+  // ── article (collection) ─────────────────────────────────────
+  listArticle(params?: ArticleParams): Promise<Article[]>;
+  getArticle(id: string): Promise<Article>;
+  createArticle(data: Omit<Article, keyof PlatoItem>): Promise<Article>;
+  updateArticle(id: string, data: Partial<Omit<Article, keyof PlatoItem>>): Promise<Article>;
+  deleteArticle(id: string): Promise<void>;
+  findArticle(params: ArticleParams): Promise<Article | null>;
+  tryListArticle(params?: ArticleParams): Promise<Article[]>;
+  tryGetArticle(id: string): Promise<Article | null>;
 }

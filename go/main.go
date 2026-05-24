@@ -15,16 +15,25 @@ import (
 
 // Manifest represents the top-level plato-manifest.json structure.
 type Manifest struct {
-	Namespace string           `json:"namespace"`
-	Public    bool             `json:"public"`
-	Schemas   []ManifestSchema `json:"schemas"`
+	Namespace  string             `json:"namespace"`
+	Public     bool               `json:"public"`
+	Schemas    []ManifestSchema   `json:"schemas"`
+	Supersets  []ManifestSuperset `json:"supersets,omitempty"`
+}
+
+// ManifestSuperset represents a named field bundle that schemas can extend.
+type ManifestSuperset struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Fields      []ManifestField `json:"fields"`
 }
 
 // ManifestSchema represents a single schema entry (singleton or collection).
 type ManifestSchema struct {
-	Name   string          `json:"name"`
-	Type   string          `json:"type"` // "singleton" | "collection"
-	Fields []ManifestField `json:"fields"`
+	Name    string          `json:"name"`
+	Type    string          `json:"type"` // "singleton" | "collection"
+	Fields  []ManifestField `json:"fields"`
+	Extends []string        `json:"extends,omitempty"`
 }
 
 // ManifestField represents a single field within a schema.
@@ -32,6 +41,67 @@ type ManifestField struct {
 	Name     string `json:"name"`
 	Type     string `json:"type"`     // string | number | boolean | date | media | relation_one | relation_many
 	Required bool   `json:"required"` // omitted = false
+	IsTitle  bool   `json:"is_title,omitempty"`
+}
+
+// builtinSupersets contains the built-in supersets bundled with the generator.
+var builtinSupersets = []ManifestSuperset{
+	{
+		Name:        "page",
+		Description: "Canonical website page: titled, slugged, markdown body, SEO meta description, hero image with responsive variants.",
+		Fields: []ManifestField{
+			{Name: "title", Type: "string", Required: true, IsTitle: true},
+			{Name: "body", Type: "string"},
+			{Name: "meta_description", Type: "string"},
+			{Name: "cover_image", Type: "media"},
+		},
+	},
+}
+
+// expandManifest resolves all supersets and extends references in the manifest,
+// returning a new manifest with flat field lists on every schema.
+func expandManifest(manifest Manifest) Manifest {
+	supersetMap := make(map[string]ManifestSuperset)
+	for _, s := range builtinSupersets {
+		supersetMap[s.Name] = s
+	}
+	for _, s := range manifest.Supersets {
+		supersetMap[s.Name] = s
+	}
+
+	schemas := make([]ManifestSchema, len(manifest.Schemas))
+	for i, schema := range manifest.Schemas {
+		merged := []ManifestField{}
+		indexByName := map[string]int{}
+
+		apply := func(fields []ManifestField) {
+			for _, field := range fields {
+				if idx, ok := indexByName[field.Name]; ok {
+					merged[idx] = field
+				} else {
+					indexByName[field.Name] = len(merged)
+					merged = append(merged, field)
+				}
+			}
+		}
+
+		for _, name := range schema.Extends {
+			superset, ok := supersetMap[name]
+			if !ok {
+				fmt.Fprintf(os.Stderr, "plato-codegen: unknown superset %q referenced by schema %q — skipping\n", name, schema.Name)
+				continue
+			}
+			apply(superset.Fields)
+		}
+		apply(schema.Fields)
+
+		schema.Fields = merged
+		schema.Extends = nil
+		schemas[i] = schema
+	}
+
+	manifest.Schemas = schemas
+	return manifest
 }
 
 // ---------------------------------------------------------------------------
@@ -509,6 +579,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "plato-codegen: manifest missing required field: namespace")
 		os.Exit(1)
 	}
+
+	manifest = expandManifest(manifest)
 
 	// Generate client source.
 	code := generate(manifest)

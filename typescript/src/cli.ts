@@ -22,6 +22,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateDeclarations, generateRuntime, generateTypeScript } from './generators/typescript.js';
 import type { Manifest } from './manifest.js';
+import { expandManifest } from './expand.js';
 
 // ── Arg parsing ───────────────────────────────────────────────────────────────
 
@@ -79,8 +80,9 @@ if (isGenerate) {
 
   fs.mkdirSync(outDir, { recursive: true });
 
-  const dts = generateDeclarations(manifest);
-  const js  = generateRuntime(manifest);
+  const expanded = expandManifest(manifest);
+  const dts = generateDeclarations(expanded);
+  const js  = generateRuntime(expanded);
 
   fs.writeFileSync(path.join(outDir, 'index.d.ts'), dts, 'utf8');
   fs.writeFileSync(path.join(outDir, 'index.js'),   js,  'utf8');
@@ -101,7 +103,7 @@ const outputPath   = args[1] ?? defaultOut;
 
 const { manifest, resolved: manifestResolved } = loadManifest(manifestArg);
 
-const output      = generateTypeScript(manifest);
+const output      = generateTypeScript(expandManifest(manifest));
 const outResolved = path.resolve(outputPath);
 fs.mkdirSync(path.dirname(outResolved), { recursive: true });
 fs.writeFileSync(outResolved, output, 'utf8');

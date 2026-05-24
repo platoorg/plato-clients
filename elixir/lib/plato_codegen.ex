@@ -77,12 +77,25 @@ defmodule PlatoCodegen do
   # Public API
   # ---------------------------------------------------------------------------
 
+  @builtin_supersets [
+    %{
+      name: "page",
+      fields: [
+        %{name: "title", type: "string", required: true},
+        %{name: "body", type: "string", required: false},
+        %{name: "meta_description", type: "string", required: false},
+        %{name: "cover_image", type: "media", required: false}
+      ]
+    }
+  ]
+
   @doc """
   Accepts a manifest map (with atom keys) and returns the generated Elixir
   source code as a string.
   """
   @spec generate(map()) :: String.t()
   def generate(manifest) do
+    manifest = expand_manifest(manifest)
     namespace = Map.fetch!(manifest, :namespace)
     schemas = Map.get(manifest, :schemas, [])
 
@@ -96,6 +109,63 @@ defmodule PlatoCodegen do
       |> List.flatten()
 
     Enum.join(sections, "\n")
+  end
+
+  # ---------------------------------------------------------------------------
+  # Superset expansion
+  # ---------------------------------------------------------------------------
+
+  defp expand_manifest(manifest) do
+    superset_map =
+      Enum.reduce(@builtin_supersets, %{}, fn s, acc -> Map.put(acc, s.name, s.fields) end)
+
+    superset_map =
+      manifest
+      |> Map.get(:supersets, [])
+      |> Enum.reduce(superset_map, fn s, acc ->
+        name = s |> Map.get(:name) |> to_string()
+        fields = Map.get(s, :fields, [])
+        Map.put(acc, name, fields)
+      end)
+
+    schemas =
+      manifest
+      |> Map.get(:schemas, [])
+      |> Enum.map(fn schema ->
+        extends = schema |> Map.get(:extends, []) |> Enum.map(&to_string/1)
+        own_fields = Map.get(schema, :fields, [])
+
+        {merged, index} =
+          Enum.reduce(extends, {[], %{}}, fn name, {m, i} ->
+            case Map.fetch(superset_map, name) do
+              {:ok, fields} -> apply_fields(fields, m, i)
+              :error ->
+                IO.warn("plato: unknown superset #{inspect(name)} referenced by schema #{inspect(Map.get(schema, :name))} — skipping")
+                {m, i}
+            end
+          end)
+
+        {merged, _index} = apply_fields(own_fields, merged, index)
+
+        schema
+        |> Map.put(:fields, merged)
+        |> Map.put(:extends, [])
+      end)
+
+    Map.put(manifest, :schemas, schemas)
+  end
+
+  defp apply_fields(fields, merged, index) do
+    Enum.reduce(fields, {merged, index}, fn field, {merged_acc, index_acc} ->
+      name = field |> Map.get(:name) |> to_string()
+      case Map.fetch(index_acc, name) do
+        {:ok, idx} ->
+          {List.replace_at(merged_acc, idx, field), index_acc}
+        :error ->
+          new_idx = length(merged_acc)
+          {merged_acc ++ [field], Map.put(index_acc, name, new_idx)}
+      end
+    end)
   end
 
   # ---------------------------------------------------------------------------

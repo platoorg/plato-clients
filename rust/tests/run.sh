@@ -8,6 +8,9 @@ for arg in "$@"; do [[ "$arg" == "--update" ]] && UPDATE=1; done
 GENERATED="$(mktemp /tmp/snapshot.XXXXXX.rs)"
 trap 'rm -f "$GENERATED"' EXIT
 
+# Unit tests (--bins only; tests/ contains generated snapshots, not integration tests)
+(cd "$LANG_ROOT" && cargo test --bins --quiet)
+
 (cd "$LANG_ROOT" && cargo build --release --quiet && "$LANG_ROOT/target/release/plato-client" "$DIR/fixture.json" "$GENERATED")
 
 if [[ "$UPDATE" -eq 1 ]]; then
