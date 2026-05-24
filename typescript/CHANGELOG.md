@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/platoorg/plato-clients/compare/ts-client-v0.6.0...ts-client-v0.7.0) (2026-05-24)
+
+
+### Features
+
+* **clients:** expand supersets and extends client-side in all 6 generators ([7c829bf](https://github.com/platoorg/plato-clients/commit/7c829bf0a392a4c48463d16bf4efe82f81e5e852))
+
 ## [0.6.0](https://github.com/platoorg/plato-clients/compare/ts-client-v0.5.0...ts-client-v0.6.0) (2026-05-03)
 
 
