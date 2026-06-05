@@ -1,5 +1,6 @@
 export type FieldType =
   | 'string'
+  | 'text'
   | 'number'
   | 'boolean'
   | 'date'
@@ -15,6 +16,14 @@ export interface ManifestField {
   type: FieldType;
   required?: boolean;
   is_title?: boolean;
+  /**
+   * Mark a string/text field as translated. Values are stored as a
+   * per-locale map `{en: "...", de: "..."}` on the server. Reads with
+   * `?locale=<code>` (or the namespace's default) flatten to a scalar;
+   * reads with `?locale=*` return the raw map. Writes accept either a
+   * scalar (writes to the active locale) or a full map.
+   */
+  localized?: boolean;
 }
 
 export interface ManifestSuperset {
@@ -36,6 +45,19 @@ export interface ManifestSchema {
 export interface Manifest {
   namespace?: string;
   public?: boolean;
+  /**
+   * ISO 639-1 codes the namespace supports. When set, every field
+   * marked `localized: true` validates against this list and reads
+   * gain a `?locale=<code>` parameter. Empty / undefined = no
+   * localization for this namespace.
+   */
+  supported_languages?: string[];
+  /**
+   * Locale used when reads omit `?locale=` and the fallback target
+   * when a requested locale has no value. Must be one of
+   * `supported_languages`.
+   */
+  default_language?: string;
   schemas: ManifestSchema[];
   supersets?: ManifestSuperset[];
 }

@@ -26,6 +26,7 @@ function toSlug(schema: { name: string; slug?: string }): string {
 /** Map a Plato field type to its TypeScript counterpart (interface fields). */
 const TS_TYPE: Record<string, string> = {
   string:        'string',
+  text:          'string',                  // long-form text — same TS shape as string
   number:        'number',
   boolean:       'boolean',
   date:          'string',                  // ISO 8601 date string
@@ -38,6 +39,7 @@ const TS_TYPE: Record<string, string> = {
 /** Map a Plato field type to its TypeScript counterpart inside *Params interfaces. */
 const PARAMS_TS_TYPE: Record<string, string> = {
   string:        'string',
+  text:          'string',
   number:        'number',
   boolean:       'boolean',
   date:          'string',
@@ -64,6 +66,35 @@ function hasRichTextField(schemas: ManifestSchema[]): boolean {
 function hasMediaField(schemas: ManifestSchema[]): boolean {
   return schemas.some(s => s.fields.some(f => f.type === 'media'));
 }
+
+/** Returns true if any field in the manifest is marked localized. */
+function hasLocalizedField(schemas: ManifestSchema[]): boolean {
+  return schemas.some(s => s.fields.some(f => f.localized === true));
+}
+
+/**
+ * LocalizedValue<T> emitted into the generated client when any field
+ * carries `localized: true`. The shape mirrors what the server accepts
+ * and returns:
+ *
+ *   - reads with no `?locale=` (or `?locale=<code>`) → flattened scalar
+ *   - reads with `?locale=*`                          → per-locale map
+ *   - writes accept either shape; a scalar merges into the active locale,
+ *     a map replaces all locales
+ *
+ * Codegen leans on the union so editors can pass either shape without
+ * a type assertion. Consumers reading default-locale flattens see the
+ * `T` arm naturally.
+ */
+const LOCALIZED_TYPES_TS = [
+  '// ── Localization ───────────────────────────────────────────────',
+  '/**',
+  ' * Stored shape for a `localized: true` field. Reads default to the',
+  ' * scalar arm (server flattens by `?locale=` or namespace.default_language);',
+  ' * `?locale=*` returns the map arm. Writes accept either.',
+  ' */',
+  'export type LocalizedValue<T> = T | { [lang: string]: T };',
+].join('\n');
 
 // ── Shared media helper ───────────────────────────────────────────────────────
 
@@ -235,11 +266,14 @@ function isOrganisational(schema: ManifestSchema): boolean {
 }
 
 function fieldLine(field: ManifestField): string {
-  const tsType  = TS_TYPE[field.type] ?? 'unknown';
+  const baseType = TS_TYPE[field.type] ?? 'unknown';
+  const tsType = field.localized ? `LocalizedValue<${baseType}>` : baseType;
   const opt     = field.required ? '' : '?';
-  const comment = TS_TYPE_COMMENT[field.type]
-    ? ` // ${TS_TYPE_COMMENT[field.type]}`
-    : '';
+  const comment = field.localized
+    ? ` // localized (${field.type})`
+    : TS_TYPE_COMMENT[field.type]
+      ? ` // ${TS_TYPE_COMMENT[field.type]}`
+      : '';
   return `  ${field.name}${opt}: ${tsType};${comment}`;
 }
 
@@ -263,6 +297,11 @@ function generateTypes(schemas: ManifestSchema[]): string {
 
   if (hasMediaField(schemas)) {
     lines.push(MEDIA_TYPES_TS);
+    lines.push('');
+  }
+
+  if (hasLocalizedField(schemas)) {
+    lines.push(LOCALIZED_TYPES_TS);
     lines.push('');
   }
 

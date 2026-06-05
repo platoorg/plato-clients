@@ -29,10 +29,12 @@ function toSlug(schema: { name: string; slug?: string }): string {
  */
 const ZOD_SCHEMA: Record<string, string> = {
   string:        'z.string()',
+  text:          'z.string()',           // long-form text — same wire shape as string
   number:        'z.number()',
   boolean:       'z.boolean()',
   date:          'z.string()',           // ISO 8601 date string
   media:         'MediaFieldSchema',     // object when variants configured, plain URL otherwise
+  richtext:      'z.unknown()',          // structured rich-text document (shape varies by editor)
   relation_one:  'z.string()',           // ID of related item
   relation_many: 'z.array(z.string())', // IDs of related items
 };
@@ -141,11 +143,19 @@ const MEDIA_BLOCK = [
 ].join('\n');
 
 function schemaFieldLine(field: ManifestField): string {
-  const base    = ZOD_SCHEMA[field.type] ?? 'z.unknown()';
+  const baseInner = ZOD_SCHEMA[field.type] ?? 'z.unknown()';
+  // Localized fields land as either a scalar (default-locale read) or a
+  // per-locale {[lang]: T} map (?locale=* read / full-map write). The
+  // union covers both shapes so the schema validates on either side.
+  const base = field.localized
+    ? `z.union([${baseInner}, z.record(z.string(), ${baseInner})])`
+    : baseInner;
   const expr    = field.required ? base : `${base}.optional()`;
-  const comment = ZOD_FIELD_COMMENT[field.type]
-    ? ` // ${ZOD_FIELD_COMMENT[field.type]}`
-    : '';
+  const comment = field.localized
+    ? ` // localized (${field.type})`
+    : ZOD_FIELD_COMMENT[field.type]
+      ? ` // ${ZOD_FIELD_COMMENT[field.type]}`
+      : '';
   return `  ${field.name}: ${expr},${comment}`;
 }
 
