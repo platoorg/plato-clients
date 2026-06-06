@@ -14,19 +14,11 @@
  *   payload = JSON.stringify({ ns, sha, uid, iat, exp })
  *   sig     = HMAC-SHA256(PLATO_PREVIEW_SECRET, payload_b64url)
  *
- * Security stance:
- *
- *   - HMAC verified locally; expiry enforced against the system clock.
- *   - URL token TTL is short (~5 min on the Plato side); when valid,
- *     the middleware persists the resolved SHA in an httpOnly cookie
- *     so navigation works without re-passing the param.
- *   - The cookie name carries the namespace slug so two simultaneous
- *     preview sessions for different namespaces don't collide.
- *   - The middleware is purely opt-in — a frontend that never imports
- *     this module continues to read live HEAD.
+ * Crypto: uses Web Crypto (`globalThis.crypto.subtle`) so the same
+ * code works in Node, the Next.js Edge runtime, and any modern
+ * browser. As a consequence verify+resolve are async — callers in
+ * Next middleware / Server Components await them.
  */
-
-import { createHmac, timingSafeEqual } from 'node:crypto';
 
 /** Claims encoded in the token payload. */
 export interface PreviewClaims {
@@ -49,23 +41,47 @@ export type VerifyResult =
 
 /**
  * Verify a preview token's HMAC and expiry. Returns the claims on
- * success or a discriminated-union failure tag on rejection. Pure
- * function — safe to call from any runtime (Node, edge, browser with
- * the WebCrypto polyfill replacing node:crypto).
+ * success or a discriminated-union failure tag on rejection.
+ *
+ * Async because Web Crypto's SubtleCrypto APIs are async. Negligible
+ * overhead — the HMAC is computed once per request entry point and
+ * the resolved SHA is cached in the preview cookie.
  */
-export function verifyPreviewToken(token: string, secret: string): VerifyResult {
+export async function verifyPreviewToken(
+  token: string,
+  secret: string,
+): Promise<VerifyResult> {
   if (!token || !token.includes('.')) return { ok: false, reason: 'malformed' };
   const [payloadB64, sigB64] = token.split('.', 2);
   if (!payloadB64 || !sigB64) return { ok: false, reason: 'malformed' };
 
-  const expected = createHmac('sha256', secret).update(payloadB64).digest();
-  const got = b64urlToBuffer(sigB64);
-  if (got.length !== expected.length) return { ok: false, reason: 'bad_signature' };
-  if (!timingSafeEqual(got, expected)) return { ok: false, reason: 'bad_signature' };
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const expected = new Uint8Array(
+    await crypto.subtle.sign('HMAC', key, enc.encode(payloadB64)),
+  );
+
+  let got: Uint8Array;
+  try {
+    got = b64urlToBytes(sigB64);
+  } catch {
+    return { ok: false, reason: 'malformed' };
+  }
+
+  if (!constantTimeEqual(got, expected)) {
+    return { ok: false, reason: 'bad_signature' };
+  }
 
   let claims: PreviewClaims;
   try {
-    claims = JSON.parse(b64urlToBuffer(payloadB64).toString('utf-8')) as PreviewClaims;
+    const payloadBytes = b64urlToBytes(payloadB64);
+    claims = JSON.parse(new TextDecoder().decode(payloadBytes)) as PreviewClaims;
   } catch {
     return { ok: false, reason: 'malformed' };
   }
@@ -78,9 +94,35 @@ export function verifyPreviewToken(token: string, secret: string): VerifyResult 
   return { ok: true, claims };
 }
 
-function b64urlToBuffer(s: string): Buffer {
-  // node:Buffer accepts base64url since Node 16.
-  return Buffer.from(s, 'base64url');
+/**
+ * Constant-time byte-array equality. Length-leak is fine (an attacker
+ * already knows the SHA-256 output length); content comparison is
+ * branch-free over the longer length.
+ */
+function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+/**
+ * Decode base64url to bytes. Pads to a multiple of 4 + maps the
+ * URL-safe alphabet back to standard base64, then uses Buffer (Node)
+ * or atob (Edge / browser) — whichever is available.
+ */
+function b64urlToBytes(s: string): Uint8Array {
+  const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+  // Prefer Buffer when available (Node) — faster than the polyfill loop.
+  const g = globalThis as unknown as { Buffer?: { from(input: string, enc: string): Uint8Array } };
+  if (g.Buffer && typeof g.Buffer.from === 'function') {
+    return new Uint8Array(g.Buffer.from(padded, 'base64'));
+  }
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
 
 /**
@@ -138,49 +180,47 @@ export type ResolvePreviewResult =
 /**
  * Resolve the request's preview state. Pass the URL token (if the
  * request just arrived from Plato) and the cookie token (if a prior
- * request already established a session). The function returns
- * `mode: 'preview'` only when at least one of them validates.
+ * request already established a session).
  *
- * Wiring example (Next.js middleware):
+ * Wiring example (Next.js middleware — runs in the Edge runtime):
  *
  *   import { resolvePreview, previewCookieName, PREVIEW_QUERY_PARAM }
  *     from '@platoorg/ts-client/preview';
  *
- *   export function middleware(req: NextRequest) {
+ *   export async function middleware(req: NextRequest) {
  *     const ns = process.env.PLATO_NS!;
  *     const urlToken = req.nextUrl.searchParams.get(PREVIEW_QUERY_PARAM);
  *     const cookieName = previewCookieName(ns);
  *     const cookieToken = req.cookies.get(cookieName)?.value;
  *
- *     const r = resolvePreview({
+ *     const r = await resolvePreview({
  *       urlToken,
  *       cookieToken,
  *       secret: process.env.PLATO_PREVIEW_SECRET!,
  *     });
  *
  *     const res = NextResponse.next();
- *     if (r.mode === 'preview') {
- *       res.headers.set('x-plato-preview-sha', r.sha);
- *       if (r.tokenToPersist) {
- *         res.cookies.set(cookieName, r.tokenToPersist, {
- *           httpOnly: true,
- *           sameSite: 'lax',
- *           secure: true,
- *           maxAge: r.exp - Math.floor(Date.now() / 1000),
- *         });
- *       }
+ *     if (r.mode === 'preview' && r.tokenToPersist) {
+ *       res.cookies.set(cookieName, r.tokenToPersist, {
+ *         httpOnly: true,
+ *         sameSite: 'lax',
+ *         secure: true,
+ *         maxAge: r.exp - Math.floor(Date.now() / 1000),
+ *       });
  *     }
  *     return res;
  *   }
  */
-export function resolvePreview(input: ResolvePreviewInput): ResolvePreviewResult {
+export async function resolvePreview(
+  input: ResolvePreviewInput,
+): Promise<ResolvePreviewResult> {
   const { urlToken, cookieToken, secret } = input;
   if (!secret) return { mode: 'live', reason: 'no secret configured' };
 
   // URL token wins — it's the freshest signal and indicates the editor
   // just arrived from Plato.
   if (urlToken) {
-    const v = verifyPreviewToken(urlToken, secret);
+    const v = await verifyPreviewToken(urlToken, secret);
     if (v.ok) {
       return {
         mode: 'preview',
@@ -195,7 +235,7 @@ export function resolvePreview(input: ResolvePreviewInput): ResolvePreviewResult
   }
 
   if (cookieToken) {
-    const v = verifyPreviewToken(cookieToken, secret);
+    const v = await verifyPreviewToken(cookieToken, secret);
     if (v.ok) {
       return {
         mode: 'preview',

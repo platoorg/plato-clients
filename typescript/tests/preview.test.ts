@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { createHmac } from 'node:crypto';
 import {
   verifyPreviewToken,
   resolvePreview,
@@ -11,11 +10,24 @@ import {
 
 const SECRET = 'test-secret-do-not-use';
 
-/** Mint helper that mirrors Plato's preview_token.go wire format. */
-function mintToken(claims: PreviewClaims, secret = SECRET): string {
+/**
+ * Mint a token using Web Crypto — mirrors Plato's preview_token.go
+ * wire format AND uses the same SubtleCrypto path the production
+ * verifier uses. Async because the API is async.
+ */
+async function mintToken(claims: PreviewClaims, secret = SECRET): Promise<string> {
+  const enc = new TextEncoder();
   const payload = Buffer.from(JSON.stringify(claims), 'utf-8').toString('base64url');
-  const sig = createHmac('sha256', secret).update(payload).digest('base64url');
-  return `${payload}.${sig}`;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(payload)));
+  const sigB64 = Buffer.from(sig).toString('base64url');
+  return `${payload}.${sigB64}`;
 }
 
 function nowSecs(): number {
@@ -23,9 +35,9 @@ function nowSecs(): number {
 }
 
 describe('verifyPreviewToken', () => {
-  it('round-trips a freshly minted token', () => {
-    const token = mintToken({ ns: 'site@alice', sha: 'abc12345', iat: nowSecs(), exp: nowSecs() + 300 });
-    const r = verifyPreviewToken(token, SECRET);
+  it('round-trips a freshly minted token', async () => {
+    const token = await mintToken({ ns: 'site@alice', sha: 'abc12345', iat: nowSecs(), exp: nowSecs() + 300 });
+    const r = await verifyPreviewToken(token, SECRET);
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.claims.ns).toBe('site@alice');
@@ -33,41 +45,40 @@ describe('verifyPreviewToken', () => {
     }
   });
 
-  it('rejects a wrong-secret signature', () => {
-    const token = mintToken({ ns: 'x', sha: 'y', iat: nowSecs(), exp: nowSecs() + 60 });
-    const r = verifyPreviewToken(token, 'other-secret');
+  it('rejects a wrong-secret signature', async () => {
+    const token = await mintToken({ ns: 'x', sha: 'y', iat: nowSecs(), exp: nowSecs() + 60 });
+    const r = await verifyPreviewToken(token, 'other-secret');
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe('bad_signature');
   });
 
-  it('rejects an expired token', () => {
-    const token = mintToken({ ns: 'x', sha: 'y', iat: nowSecs() - 600, exp: nowSecs() - 1 });
-    const r = verifyPreviewToken(token, SECRET);
+  it('rejects an expired token', async () => {
+    const token = await mintToken({ ns: 'x', sha: 'y', iat: nowSecs() - 600, exp: nowSecs() - 1 });
+    const r = await verifyPreviewToken(token, SECRET);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe('expired');
   });
 
-  it('rejects malformed tokens', () => {
-    expect(verifyPreviewToken('', SECRET).ok).toBe(false);
-    expect(verifyPreviewToken('no-dot', SECRET).ok).toBe(false);
-    expect(verifyPreviewToken('a.', SECRET).ok).toBe(false);
-    expect(verifyPreviewToken('.b', SECRET).ok).toBe(false);
+  it('rejects malformed tokens', async () => {
+    expect((await verifyPreviewToken('', SECRET)).ok).toBe(false);
+    expect((await verifyPreviewToken('no-dot', SECRET)).ok).toBe(false);
+    expect((await verifyPreviewToken('a.', SECRET)).ok).toBe(false);
+    expect((await verifyPreviewToken('.b', SECRET)).ok).toBe(false);
   });
 
-  it('rejects tampered payload', () => {
-    const token = mintToken({ ns: 'x', sha: 'y', iat: nowSecs(), exp: nowSecs() + 60 });
-    // Flip a character in the payload (before the dot).
+  it('rejects tampered payload', async () => {
+    const token = await mintToken({ ns: 'x', sha: 'y', iat: nowSecs(), exp: nowSecs() + 60 });
     const idx = token.indexOf('.');
     const tampered = (token[0] === 'a' ? 'b' : 'a') + token.slice(1, idx) + token.slice(idx);
-    const r = verifyPreviewToken(tampered, SECRET);
+    const r = await verifyPreviewToken(tampered, SECRET);
     expect(r.ok).toBe(false);
   });
 });
 
 describe('resolvePreview', () => {
-  it('prefers a valid URL token', () => {
-    const token = mintToken({ ns: 'site', sha: 'sha1', iat: nowSecs(), exp: nowSecs() + 300 });
-    const r = resolvePreview({ urlToken: token, secret: SECRET });
+  it('prefers a valid URL token', async () => {
+    const token = await mintToken({ ns: 'site', sha: 'sha1', iat: nowSecs(), exp: nowSecs() + 300 });
+    const r = await resolvePreview({ urlToken: token, secret: SECRET });
     expect(r.mode).toBe('preview');
     if (r.mode === 'preview') {
       expect(r.sha).toBe('sha1');
@@ -75,31 +86,30 @@ describe('resolvePreview', () => {
     }
   });
 
-  it('falls back to cookie when URL token is invalid', () => {
-    const validCookie = mintToken({ ns: 'site', sha: 'sha-cookie', iat: nowSecs(), exp: nowSecs() + 300 });
-    const r = resolvePreview({ urlToken: 'garbage.token', cookieToken: validCookie, secret: SECRET });
+  it('falls back to cookie when URL token is invalid', async () => {
+    const validCookie = await mintToken({ ns: 'site', sha: 'sha-cookie', iat: nowSecs(), exp: nowSecs() + 300 });
+    const r = await resolvePreview({ urlToken: 'garbage.token', cookieToken: validCookie, secret: SECRET });
     expect(r.mode).toBe('preview');
     if (r.mode === 'preview') {
       expect(r.sha).toBe('sha-cookie');
-      // No tokenToPersist when the URL token didn't validate.
       expect(r.tokenToPersist).toBeUndefined();
     }
   });
 
-  it('falls back to live when both tokens are missing', () => {
-    const r = resolvePreview({ secret: SECRET });
+  it('falls back to live when both tokens are missing', async () => {
+    const r = await resolvePreview({ secret: SECRET });
     expect(r.mode).toBe('live');
   });
 
-  it('falls back to live when secret is empty', () => {
-    const token = mintToken({ ns: 'x', sha: 'y', iat: nowSecs(), exp: nowSecs() + 60 });
-    const r = resolvePreview({ urlToken: token, secret: '' });
+  it('falls back to live when secret is empty', async () => {
+    const token = await mintToken({ ns: 'x', sha: 'y', iat: nowSecs(), exp: nowSecs() + 60 });
+    const r = await resolvePreview({ urlToken: token, secret: '' });
     expect(r.mode).toBe('live');
   });
 
-  it('falls back to live when both tokens are expired', () => {
-    const expired = mintToken({ ns: 'x', sha: 'y', iat: nowSecs() - 10, exp: nowSecs() - 1 });
-    const r = resolvePreview({ urlToken: expired, cookieToken: expired, secret: SECRET });
+  it('falls back to live when both tokens are expired', async () => {
+    const expired = await mintToken({ ns: 'x', sha: 'y', iat: nowSecs() - 10, exp: nowSecs() - 1 });
+    const r = await resolvePreview({ urlToken: expired, cookieToken: expired, secret: SECRET });
     expect(r.mode).toBe('live');
   });
 });
