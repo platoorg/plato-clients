@@ -24,8 +24,14 @@
 export interface PreviewClaims {
   /** Source namespace slug being previewed (e.g. "site@alice"). */
   ns: string;
-  /** Snapshot SHA the frontend should read at. */
-  sha: string;
+  /**
+   * Snapshot SHA the frontend should pin to. **Optional**: when
+   * omitted, the preview follows the namespace's live HEAD — editor
+   * edits in Plato become visible on the frontend's next page load.
+   * Present only when the mint caller asked for a pinned historical
+   * preview.
+   */
+  sha?: string;
   /** Editor's user id at the time of mint — audit only; not enforced. */
   uid?: string;
   /** Issued-at, unix seconds. */
@@ -168,7 +174,11 @@ export interface ResolvePreviewInput {
 export type ResolvePreviewResult =
   | {
       mode: 'preview';
-      sha: string;
+      /**
+       * Pinned snapshot SHA. Undefined when the token follows HEAD —
+       * the frontend should read live content for `ns` in that case.
+       */
+      sha?: string;
       ns: string;
       /** Token to persist as a session cookie (URL token, if it just arrived). */
       tokenToPersist?: string;
