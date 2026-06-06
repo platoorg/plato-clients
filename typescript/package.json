@@ -13,6 +13,10 @@
     "./generated": {
       "import": "./generated/index.js",
       "types": "./generated/index.d.ts"
+    },
+    "./preview": {
+      "import": "./dist/preview.js",
+      "types": "./dist/preview.d.ts"
     }
   },
   "bin": {
