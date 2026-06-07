@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/platoorg/plato-clients/compare/ts-client-v0.7.0...ts-client-v0.8.0) (2026-06-07)
+
+
+### Features
+
+* **codegen:** emit LocalizedValue types for localized fields ([d5744cf](https://github.com/platoorg/plato-clients/commit/d5744cf09a3cb75fa5ebf00530f1522fed9261c2))
+* **preview:** HMAC token verification + resolve middleware (TS) ([5a2c1d5](https://github.com/platoorg/plato-clients/commit/5a2c1d5379449ad43593bb30ef73ddc348dbe65f))
+* **preview:** make PreviewClaims.sha optional (HEAD-follow) ([90d3920](https://github.com/platoorg/plato-clients/commit/90d3920153b6c44a80e71d615f3b787bb4fa5fa4))
+
+
+### Bug Fixes
+
+* **preview:** use Web Crypto so the middleware runs on Edge ([56e8062](https://github.com/platoorg/plato-clients/commit/56e806271d57429916fe4102f51766196fc558d9))
+
 ## [0.7.0](https://github.com/platoorg/plato-clients/compare/ts-client-v0.6.0...ts-client-v0.7.0) (2026-05-24)
 
 
